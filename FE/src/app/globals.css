@@ -1,0 +1,78 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens — Tailwind v4 khai báo theme bằng @theme trong CSS, không còn
+ * tailwind.config.js. Mỗi biến ở đây tự sinh ra utility tương ứng:
+ * `--color-brand` → `bg-brand` / `text-brand` / `border-brand`.
+ */
+@theme {
+  /* Xanh lá = tiền vào, là màu chủ đạo của app tài chính */
+  --color-brand-50: #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-400: #34d399;
+  --color-brand: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+
+  /* Thu / chi — dùng nhất quán toàn app, đừng dùng green-500/red-500 rời rạc */
+  --color-income: #10b981;
+  --color-expense: #f43f5e;
+
+  /* Trạng thái ngân sách: ok → warning → exceeded */
+  --color-ok: #10b981;
+  --color-warning: #f59e0b;
+  --color-exceeded: #f43f5e;
+
+  --font-sans: 'Be Vietnam Pro', ui-sans-serif, system-ui, sans-serif;
+}
+
+/*
+ * Màu nền/chữ khai báo dạng biến thường (không phải @theme) để đổi được theo dark mode.
+ * Mặc định là sáng; khối dưới ghi đè khi thẻ <html> có class `dark`.
+ */
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --text-muted: #64748b;
+}
+
+.dark {
+  --bg: #0b1120;
+  --surface: #111827;
+  --surface-2: #1f2937;
+  --border: #1f2937;
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Số tiền luôn dùng chữ số đều nhau để cột số không nhảy khi giá trị đổi */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .surface {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  .muted {
+    color: var(--text-muted);
+  }
+}
