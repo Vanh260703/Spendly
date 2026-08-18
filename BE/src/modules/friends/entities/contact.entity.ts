@@ -52,6 +52,27 @@ export class Contact extends BaseEntity {
   color: string;
 
   /**
+   * URL ảnh QR chuyển tiền của người này (Cloudinary `secure_url`).
+   *
+   * Để khỏi phải đi hỏi lại QR mỗi lần trả nợ. Chỉ là một chuỗi URL — BE không hiểu nội dung
+   * bên trong mã QR và không cần hiểu.
+   *
+   * ⚠️ `text` chứ không `varchar`: URL Cloudinary có thể dài khi kèm transformation.
+   */
+  @Column({ type: 'text', nullable: true })
+  qrImage?: string | null;
+
+  /**
+   * `public_id` của chính tấm ảnh trên — **chỉ dùng để XÓA nó đi**.
+   *
+   * Không có cột này thì mỗi lần user thay QR mới là tấm cũ nằm lại trên Cloudinary vĩnh
+   * viễn. Suy ngược `public_id` từ URL được, nhưng phải tự bóc version với phần mở rộng và
+   * sẽ sai ngay khi Cloudinary đổi dạng URL — lưu thẳng thì không phải đoán.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  qrImagePublicId?: string | null;
+
+  /**
    * Ẩn khỏi ô chọn người nhưng GIỮ nguyên lịch sử.
    *
    * Dùng cho người không còn qua lại nữa. Xóa hẳn bị chặn khi công nợ khác 0.

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { CloudinaryService } from '../../shared/cloudinary';
 import { RedisKeys, RedisService } from '../../shared/redis';
 import { SYSTEM_CATEGORY } from '../categories/default-categories';
 import { Category, CategoryType } from '../categories/entities/category.entity';
@@ -40,6 +41,7 @@ export class FriendsService {
     @InjectRepository(Wallet) private readonly wallets: Repository<Wallet>,
     private readonly dataSource: DataSource,
     private readonly redis: RedisService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   // ═══════════════════════ Công nợ — MỘT chỗ duy nhất ═══════════════════════
@@ -170,6 +172,8 @@ export class FriendsService {
         phone: dto.phone ?? null,
         note: dto.note ?? null,
         color: dto.color ?? MAU_AVATAR[soNguoi % MAU_AVATAR.length],
+        qrImage: dto.qrImage ?? null,
+        qrImagePublicId: dto.qrImagePublicId ?? null,
       }),
     );
 
@@ -194,7 +198,26 @@ export class FriendsService {
     if (dto.color !== undefined) contact.color = dto.color;
     if (dto.isArchived !== undefined) contact.isArchived = dto.isArchived;
 
+    /*
+      Thay QR mới (hoặc gỡ QR đi) → phải xóa ảnh CŨ trên Cloudinary.
+
+      Giữ lại tham chiếu trước khi ghi đè, vì sau `save()` thì `qrImagePublicId` cũ đã mất và
+      không còn cách nào biết tấm ảnh đó tên gì. Bỏ qua bước này thì mỗi lần đổi QR là bỏ lại
+      một tấm ảnh mồ côi — không ai thấy, không ai dọn, chỉ âm thầm ăn quota.
+    */
+    let anhCanXoa: string | null = null;
+    if (dto.qrImage !== undefined && dto.qrImage !== contact.qrImage) {
+      anhCanXoa = contact.qrImagePublicId ?? null;
+      contact.qrImage = dto.qrImage;
+      contact.qrImagePublicId = dto.qrImagePublicId ?? null;
+    }
+
     const saved = await this.contacts.save(contact);
+
+    // Sau khi DB đã ghi xong: xóa hụt thì chỉ còn rác trên Cloudinary, còn xóa trước mà DB
+    // lỗi thì bản ghi trỏ tới một tấm ảnh không còn tồn tại — hỏng nặng hơn nhiều.
+    await this.cloudinary.xoa(anhCanXoa);
+
     const congNo = await this.tinhCongNo(userId);
     return this.toContactDto(saved, congNo.get(id) ?? 0);
   }
@@ -217,7 +240,12 @@ export class FriendsService {
       );
     }
 
+    const anhCanXoa = contact.qrImagePublicId ?? null;
     await this.contacts.remove(contact);
+
+    // Xóa ảnh SAU khi bản ghi đã biến mất. `xoa()` không ném lỗi nên Cloudinary chết cũng
+    // không làm hỏng thao tác xóa người — cùng nguyên tắc suy giảm êm đang dùng với Redis.
+    await this.cloudinary.xoa(anhCanXoa);
   }
 
   /** Chi tiết một người: công nợ + toàn bộ lịch sử phát sinh, mới nhất trước */
@@ -588,6 +616,13 @@ export class FriendsService {
     );
   }
 
+  /**
+   * ⚠️ Danh sách TRẮNG — liệt kê tường minh từng field. Thêm cột vào entity mà muốn nó ra
+   * tới API thì phải khai thêm ở đây; ngược lại nó ở yên trong DB.
+   *
+   * `qrImagePublicId` cố ý KHÔNG có mặt: nó chỉ phục vụ việc BE xóa ảnh trên Cloudinary,
+   * FE không dùng tới nên không có lý do gì để lộ ra.
+   */
   private toContactDto(c: Contact, balance: number): ContactDto {
     return {
       id: c.id,
@@ -596,6 +631,7 @@ export class FriendsService {
       note: c.note,
       color: c.color,
       isArchived: c.isArchived,
+      qrImage: c.qrImage ?? null,
       balance,
     };
   }

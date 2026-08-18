@@ -38,6 +38,19 @@ const envSchema = z.object({
     .default('https://generativelanguage.googleapis.com/v1beta/openai'),
   LLM_MODEL: z.string().default('gemini-flash-lite-latest'),
   AI_DAILY_LIMIT: z.coerce.number().int().positive().default(30),
+
+  /**
+   * Cloudinary — nơi lưu ảnh QR chuyển tiền của người trong danh bạ.
+   *
+   * Cả ba đều `optional()` theo đúng cách đã làm với `LLM_API_KEY`: thiếu thì app vẫn boot
+   * bình thường, chỉ riêng endpoint xin chữ ký trả 503 kèm lời nhắn rõ phải làm gì. Bắt buộc
+   * ở đây sẽ khiến máy chưa cấu hình Cloudinary không chạy nổi cả những phần không liên quan.
+   *
+   * ⚠️ `CLOUDINARY_API_SECRET` CHỈ được nằm ở BE — FE không bao giờ thấy nó, chữ ký do BE cấp.
+   */
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

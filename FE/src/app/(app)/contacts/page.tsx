@@ -1,9 +1,9 @@
 'use client';
 
-import { Receipt, Search, Trash2, Users } from 'lucide-react';
+import { Search, Trash2, UserPlus, Users } from 'lucide-react';
 import { useState } from 'react';
 import { ContactDetail } from '@/components/friends/ContactDetail';
-import { SplitBillForm } from '@/components/friends/SplitBillForm';
+import { ContactForm } from '@/components/friends/ContactForm';
 import {
   Button, Card, EmptyState, ErrorState, Input, Modal, Skeleton, cn,
 } from '@/components/ui';
@@ -21,7 +21,7 @@ export default function ContactsPage() {
   const { data, isLoading, isError, error, refetch } = useContacts({ q: tim || undefined });
   const xoa = useDeleteContact();
 
-  const [moChiaBill, setMoChiaBill] = useState(false);
+  const [moThemNguoi, setMoThemNguoi] = useState(false);
   const [dangXem, setDangXem] = useState<Contact | null>(null);
 
   const hoNoToi = (data ?? []).filter((c) => c.balance > 0);
@@ -35,8 +35,8 @@ export default function ContactsPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Danh bạ</h1>
-        <Button onClick={() => setMoChiaBill(true)}>
-          <Receipt size={16} /> Chia bill
+        <Button onClick={() => setMoThemNguoi(true)}>
+          <UserPlus size={16} /> Thêm người
         </Button>
       </div>
 
@@ -75,7 +75,14 @@ export default function ContactsPage() {
           description={
             tim
               ? 'Thử một cái tên khác.'
-              : 'Bấm "Chia bill" để ghi lần trả hộ đầu tiên — gõ tên là người đó tự vào danh bạ.'
+              : 'Thêm người vào danh bạ bất cứ lúc nào — bắt đầu ở mức 0₫, chưa ai nợ ai. Công nợ chỉ phát sinh khi bạn chia bill với họ.'
+          }
+          action={
+            tim ? undefined : (
+              <Button onClick={() => setMoThemNguoi(true)}>
+                <UserPlus size={16} /> Thêm người
+              </Button>
+            )
           }
         />
       ) : (
@@ -135,8 +142,8 @@ export default function ContactsPage() {
         </div>
       )}
 
-      <Modal open={moChiaBill} onClose={() => setMoChiaBill(false)} title="Chia bill">
-        <SplitBillForm onDone={() => setMoChiaBill(false)} />
+      <Modal open={moThemNguoi} onClose={() => setMoThemNguoi(false)} title="Thêm người">
+        <ContactForm onDone={() => setMoThemNguoi(false)} />
       </Modal>
 
       <Modal open={!!dangXem} onClose={() => setDangXem(null)} title={dangXem?.name ?? ''}>

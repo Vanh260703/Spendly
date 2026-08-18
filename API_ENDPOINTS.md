@@ -707,7 +707,7 @@ Query: `from`, `to`. Trả file trực tiếp (`Content-Disposition: attachment`
 |---|---|---|---|---|
 | 11.1 | `GET` | `/contacts` | Danh bạ kèm **công nợ từng người** | ✅ |
 | 11.2 | `POST` | `/contacts` | Thêm người (hoặc trả về người đã có cùng tên) | ✅ |
-| 11.3 | `PATCH` | `/contacts/:id` | Sửa tên / SĐT / ghi chú / lưu trữ | ✅ |
+| 11.3 | `PATCH` | `/contacts/:id` | Sửa tên / SĐT / ghi chú / **ảnh QR** / lưu trữ | ✅ |
 | 11.4 | `DELETE` | `/contacts/:id` | Xóa — **chặn khi công nợ ≠ 0** | ✅ |
 | 11.5 | `GET` | `/contacts/:id` | Chi tiết + lịch sử chia bill & tất toán | ✅ |
 | 11.6 | `POST` | `/shared-expenses` | Ghi một lần chi chung (hai chiều) | ✅ |
@@ -744,8 +744,19 @@ Query: `includeArchived` (mặc định `false`), `q` (tìm theo tên).
 
 ### 11.2 `POST /contacts`
 ```jsonc
-{ "name": "Anh Tuấn", "phone": "0901234567", "note": "bạn cùng phòng" }
+{
+  "name": "Anh Tuấn",
+  "phone": "0901234567",
+  "note": "bạn cùng phòng",
+  // Ảnh QR chuyển tiền — cả hai đều tùy chọn, do FE upload lên Cloudinary trước rồi gửi kết quả về
+  "qrImage": "https://res.cloudinary.com/<cloud>/image/upload/v1/spendly/contact-qr/abc.jpg",
+  "qrImagePublicId": "spendly/contact-qr/abc"
+}
 ```
+⚠️ `qrImage` **chỉ nhận URL `https://res.cloudinary.com/`** — không nhận base64, không nhận domain khác. Mở cho domain tùy ý thì field này thành chỗ nhúng ảnh từ bất kỳ đâu, và BE cũng không dọn được ảnh cũ.
+
+`qrImagePublicId` chỉ để BE **xóa** ảnh khi user thay QR hoặc xóa người; nó **không** xuất hiện trong response.
+
 **Tên đã tồn tại** (so theo `trim` + `lowercase`) → trả về người đã có với `200`, **không** báo `409`. Ô chọn người trong form chia bill dựa vào hành vi này để "gõ tên mới là tạo tại chỗ".
 
 ⚠️ **KHÔNG gộp có dấu với không dấu** — "Tuấn" và "Tuan" là hai người khác nhau.
@@ -852,6 +863,35 @@ Cho phép **trả từng phần** (nhiều bản ghi) và **trả dư** (công n
 
 ---
 
+## 12. Upload ảnh — `/uploads`
+
+> Hạ tầng: `shared/cloudinary/` · dùng bởi ảnh QR trong danh bạ (§11)
+
+| # | Method | Path | Việc | ✔ |
+|---|---|---|---|---|
+| 12.1 | `GET` | `/uploads/signature` | Cấp chữ ký để FE upload thẳng lên Cloudinary | ✅ |
+
+### 12.1 `GET /uploads/signature`
+```jsonc
+{
+  "success": true,
+  "data": {
+    "cloudName": "spendly",
+    "apiKey": "123456789012345",
+    "timestamp": 1787021843,
+    "signature": "a1b2c3...",
+    "folder": "spendly/contact-qr"
+  }
+}
+```
+
+**File KHÔNG đi qua BE.** FE xin chữ ký ở đây rồi `POST` thẳng lên `https://api.cloudinary.com/v1_1/<cloudName>/image/upload`. Lý do: FE build tĩnh nên không có route handler để proxy, mà đẩy file qua BE thì tốn gấp đôi băng thông cho cùng một tấm ảnh. `CLOUDINARY_API_SECRET` chỉ nằm ở BE.
+
+⚠️ **FE phải gửi lên đúng những tham số đã được ký** (`timestamp`, `folder`) — thừa hoặc thiếu một cái là Cloudinary trả `401 Invalid Signature` mà không nói lệch ở đâu.
+
+- **Cần đăng nhập** (không `@Public()`) — nếu không thì ai cũng upload được vào account và đốt sạch quota
+- Chưa cấu hình 3 biến `CLOUDINARY_*` → `503` kèm tên biến còn thiếu; phần còn lại của app vẫn chạy bình thường
+
 ## Tổng kết
 
 | Nhóm | Số endpoint | Xong |
@@ -868,6 +908,7 @@ Cho phép **trả từng phần** (nhiều bản ghi) và **trả dư** (công n
 | AI | 6 | **6** |
 | Export | 2 | **1** |
 | Danh bạ & công nợ | 10 | **10** |
-| **Tổng** | **59** | **57** |
+| Upload ảnh | 1 | **1** |
+| **Tổng** | **60** | **58** |
 
 Thứ tự làm theo lộ trình (SPEC §6): **Auth → Categories → Transactions → Stats → Budgets/Goals → AI → Debts/Export**.

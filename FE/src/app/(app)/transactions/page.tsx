@@ -2,9 +2,9 @@
 
 import { Download, Plus, Search } from 'lucide-react';
 import { useState } from 'react';
-import { QuickAddForm } from '@/components/transactions/QuickAddForm';
+import { QuickAddModal } from '@/components/transactions/QuickAddModal';
 import { TransactionList } from '@/components/transactions/TransactionList';
-import { Button, Card, Input, Modal, Select } from '@/components/ui';
+import { Button, Card, Input, Select } from '@/components/ui';
 import { useCategories } from '@/hooks/useFinance';
 import { API_URL } from '@/lib/api/client';
 import { useAuthStore } from '@/stores/auth-store';
@@ -85,9 +85,7 @@ export default function TransactionsPage() {
 
       <TransactionList filters={{ q: q || undefined, type: type || undefined, categoryId: categoryId || undefined }} />
 
-      <Modal open={moForm} onClose={() => setMoForm(false)} title="Ghi khoản thu chi">
-        <QuickAddForm onDone={() => setMoForm(false)} />
-      </Modal>
+      <QuickAddModal open={moForm} onClose={() => setMoForm(false)} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDownLeft, ArrowUpRight, HandCoins, Trash2 } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, HandCoins, QrCode, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import {
   Button, EmptyState, ErrorState, Field, Input, MoneyInput, Modal, Select, Skeleton, cn,
@@ -26,6 +26,7 @@ export function ContactDetail({ contactId, onClose }: { contactId: string; onClo
   const xoaBill = useDeleteSharedExpense();
 
   const [moTatToan, setMoTatToan] = useState(false);
+  const [moQr, setMoQr] = useState(false);
   const [form, setForm] = useState({
     direction: 'they_paid_me',
     amount: '' as number | '',
@@ -67,6 +68,15 @@ export function ContactDetail({ contactId, onClose }: { contactId: string; onClo
         <Button className="flex-1" onClick={() => setMoTatToan(true)}>
           <HandCoins size={16} /> Ghi tất toán
         </Button>
+        {/*
+          Chỉ hiện khi người này đã lưu QR. Cố ý KHÔNG ràng buộc theo chiều công nợ: có lúc
+          bạn chuyển tiền cho họ vì lý do chẳng liên quan gì tới nợ nần, mà QR thì vẫn đúng.
+        */}
+        {contact.qrImage && (
+          <Button variant="secondary" onClick={() => setMoQr(true)}>
+            <QrCode size={16} /> QR
+          </Button>
+        )}
         <Button variant="ghost" onClick={onClose}>Đóng</Button>
       </div>
 
@@ -123,6 +133,28 @@ export function ContactDetail({ contactId, onClose }: { contactId: string; onClo
           ))}
         </div>
       )}
+
+      <Modal open={moQr} onClose={() => setMoQr(false)} title={`QR chuyển tiền — ${contact.name}`}>
+        <div className="space-y-3">
+          {/*
+            Nền TRẮNG cố định, không dùng token theme: ở dark mode mà để nền tối thì mã QR
+            gần như không quét được. Đây là ảnh cần đúng tương phản, không phải đồ trang trí.
+          */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- `output: 'export'` tắt tối ưu ảnh động */}
+          <img
+            src={contact.qrImage!}
+            alt={`Mã QR chuyển tiền của ${contact.name}`}
+            className="mx-auto w-full max-w-xs rounded-xl bg-white p-3"
+          />
+          {mo.text !== 'Đã sòng phẳng' && (
+            <p className="muted text-center text-sm">{mo.text}</p>
+          )}
+          <p className="muted text-center text-xs">
+            Mở app ngân hàng và quét mã này. Số tiền phải tự nhập — app không nhúng được số
+            vào ảnh QR có sẵn.
+          </p>
+        </div>
+      </Modal>
 
       <Modal open={moTatToan} onClose={() => setMoTatToan(false)} title="Ghi tất toán">
         <form onSubmit={guiTatToan} className="space-y-4">

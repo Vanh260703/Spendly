@@ -14,6 +14,21 @@ export const createContactSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, 'Màu phải dạng #rrggbb')
     .optional(),
+
+  /*
+    Ảnh QR chuyển tiền. FE upload thẳng lên Cloudinary rồi gửi kết quả về đây, nên BE chỉ
+    nhận URL — KHÔNG nhận base64 và không nhận URL từ nơi khác: cho phép domain tùy ý thì
+    field này thành chỗ nhúng ảnh từ bất kỳ đâu, và `xoa()` cũng không dọn được.
+  */
+  qrImage: z
+    .string()
+    .url('Ảnh QR phải là URL hợp lệ')
+    .refine((u) => /^https:\/\/res\.cloudinary\.com\//.test(u), {
+      message: 'Ảnh QR phải là URL Cloudinary do chính app upload lên',
+    })
+    .optional()
+    .nullable(),
+  qrImagePublicId: z.string().max(255).optional().nullable(),
 });
 
 export const updateContactSchema = createContactSchema.partial().extend({
@@ -126,6 +141,8 @@ export interface ContactDto {
   note?: string | null;
   color: string;
   isArchived: boolean;
+  /** URL ảnh QR chuyển tiền — `null` khi người này chưa lưu QR */
+  qrImage?: string | null;
   /** Dương = họ nợ bạn · Âm = bạn nợ họ. Luôn tính bằng SUM(), không đọc cột. */
   balance: number;
 }

@@ -125,8 +125,13 @@ Hai đường tạo, **bắt buộc có cả hai**:
 
 | Đường | Khi nào |
 |---|---|
-| Chủ động thêm ở `/contacts` | quản lý trước danh sách bạn bè quanh mình |
+| Chủ động thêm ở `/contacts` (nút **"Thêm người"** → `ContactForm`) | quản lý trước danh sách bạn bè quanh mình |
 | Gõ tên mới ngay trong form chia bill → **tự tạo** | đang ghi bữa ăn, không muốn rời màn hình |
+
+Người mới **luôn bắt đầu ở mức 0₫** — không có ô "nợ ban đầu" và sẽ không thêm. `Contact`
+không có cột `balance`; con số do `tinhCongNo()` tính bằng `SUM()` trên `SharedExpense` +
+`Settlement`, nên "chưa ai nợ ai" là trạng thái mặc định tự nhiên, không phải giá trị phải
+khởi tạo. Muốn khai một khoản nợ có từ trước thì ghi nó thành một lần chi chung đúng ngày.
 
 ⚠️ **Không được bắt vào Danh bạ tạo người trước rồi mới ghi được bữa ăn.** Danh bạ trống mà
 form chia bill chỉ có ô select thì người dùng kẹt cứng ngay lần đầu dùng. Ô chọn người phải
@@ -282,7 +287,8 @@ Xếp nó vào chi tiêu là hỏng lời khuyên — đúng lỗi mà toàn b�
 
 **P0 (làm ngay):**
 - **Danh bạ** — trang `/contacts`: CRUD, avatar chữ cái đầu, ô tìm kiếm, **mỗi người kèm số
-  công nợ**; bấm vào ra lịch sử + nút tất toán
+  công nợ**; bấm vào ra lịch sử + nút tất toán. Nút chính của trang là **"Thêm người"**
+- **Chia bill nằm trong modal "Ghi khoản"** (tab thứ hai), không phải nút riêng ở `/contacts`
 - Ô chọn người kiểu **combobox**: chọn từ danh bạ hoặc gõ tên mới tạo tại chỗ
 - `SharedExpense` + shares, **cả hai chiều**, chia đều hoặc nhập tay từng phần
 - **Tách phần "mời" sang danh mục riêng** (ô "tôi mời thêm" + ô chọn danh mục)
@@ -307,6 +313,8 @@ Xếp nó vào chi tiêu là hỏng lời khuyên — đúng lỗi mà toàn b�
 | Danh bạ là thực thể hạng nhất, có trang riêng | vừa là nơi quản lý bạn bè, vừa LÀ màn hình xem ai nợ bao nhiêu — không cần trang "công nợ" thứ hai |
 | Bảng riêng, không lưu chuỗi tên vào từng dòng | "Tuấn"/"tuấn"/"anh Tuấn" sẽ thành 3 người, số nợ bị xé nhỏ |
 | Vẫn cho tạo tại chỗ khi gõ tên mới | danh bạ trống mà form chỉ có ô select thì kẹt cứng ngay lần đầu dùng |
+| Chia bill là **tab trong modal "Ghi khoản"**, không phải nút ở `/contacts` | chia bill là một cách GHI CHÉP dòng tiền, thuộc về chỗ ghi chép; `/contacts` là nơi quản lý người và xem công nợ |
+| Người mới bắt đầu ở **0₫**, không có ô "nợ ban đầu" | công nợ luôn tính bằng `SUM()` — thêm ô đó là quay lại denormalize, đúng thứ đã loại bỏ |
 | Danh bạ + công nợ chung MỘT module | tách đôi thành phụ thuộc vòng: danh bạ cần số nợ, công nợ cần tên người |
 | Không tự gộp có dấu/không dấu | có thể là hai người thật; gộp nhầm rất khó lần ra |
 | Tách 2 giao dịch thay vì trừ trong stats | tái dùng bộ lọc `isSystem` đã có và đã test; không đụng vào `stats` |

@@ -39,7 +39,8 @@ BE/src/
 │   ├── interceptors/  response envelope
 │   └── pipes/         ZodValidationPipe
 ├── shared/            module HẠ TẦNG có provider + vòng đời
-│   └── redis/         {module, service, constants, index}.ts
+│   ├── redis/         {module, service, constants, index}.ts
+│   └── cloudinary/    {module, service, index}.ts — lưu ảnh QR danh bạ
 ├── database/          data-source, migrations/, seeds/
 └── modules/           MỘT thư mục cho MỖI domain
     └── <domain>/
@@ -315,9 +316,11 @@ Chưa có ESLint config (script `lint` trong `package.json` sẽ lỗi cho tới
 | `/debts` | Danh sách + mô phỏng kế hoạch trả nợ |
 | `/ai` | Điểm sức khỏe tài chính · đánh giá mức cần thiết (**chỉ ĐỌC bản cron đã sinh**) · chat. Có fallback thống kê khi AI lỗi. **Không có báo cáo kỳ** — xem `/reports` |
 | `/reports` | **Kho báo cáo đã lưu** theo tuần/tháng, bấm để mở rộng. Nguồn DUY NHẤT của báo cáo kỳ — chỉ đọc từ DB, không tự sinh |
-| `/contacts` | **Danh bạ + công nợ bạn bè** — ai nợ bao nhiêu, chia bill hai chiều, tất toán từng phần |
+| `/contacts` | **Danh bạ + công nợ bạn bè** — ai nợ bao nhiêu, tất toán từng phần. Nút chính là **"Thêm người"**; thêm người không cần chia bill trước, bắt đầu ở 0₫. Mỗi người lưu được **ảnh QR chuyển tiền** |
 | `/categories` | CRUD danh mục, chọn `kind` kèm giải thích nó ảnh hưởng AI thế nào |
 | `/settings` | Hồ sơ · chu kỳ tháng · ví · **điều chỉnh số dư** · đổi mật khẩu |
+
+Nút **"Ghi khoản"** (ở `/dashboard` và `/transactions`) mở `components/transactions/QuickAddModal.tsx` — hai tab: **Thu/Chi** (`QuickAddForm`) và **Chia bill** (`SplitBillForm`). Đừng dựng `<Modal>` riêng ở từng trang nữa: trước đây hai trang mỗi nơi một bản, sửa một bên là lệch bên kia. Tab là ranh giới **kiểu ghi chép**, còn thanh `Chi | Thu` bên trong là **chiều tiền** — đừng gộp "Chia bill" thành mảnh thứ ba của thanh đó.
 
 Điều hướng chia 2 nhóm: `NAV_CHINH` (việc hằng ngày — nằm ở tab bar mobile) và `NAV_PHU` (thỉnh thoảng mới đụng — sau nút "Thêm"). Tab bar chỉ chứa được ~5 mục trước khi chữ bị cắt và vùng bấm quá hẹp.
 

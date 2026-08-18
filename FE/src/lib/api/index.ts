@@ -126,8 +126,13 @@ export const contactsApi = {
     api.get<Contact[]>(`/contacts${qs(params)}`),
   detail: (id: string) => api.get<ContactDetail>(`/contacts/${id}`),
   /** Tên đã có → BE trả về chính người đó, không báo trùng. Form chia bill dựa vào đây. */
-  create: (body: { name: string; phone?: string | null; note?: string | null }) =>
-    api.post<Contact>('/contacts', body),
+  create: (body: {
+    name: string;
+    phone?: string | null;
+    note?: string | null;
+    qrImage?: string | null;
+    qrImagePublicId?: string | null;
+  }) => api.post<Contact>('/contacts', body),
   update: (id: string, body: Record<string, unknown>) =>
     api.patch<Contact>(`/contacts/${id}`, body),
   remove: (id: string) => api.delete<void>(`/contacts/${id}`),

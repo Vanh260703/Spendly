@@ -7,9 +7,9 @@ import { BalanceCards } from '@/components/dashboard/BalanceCards';
 import { CategoryDonut } from '@/components/dashboard/CategoryDonut';
 import { KindRatio } from '@/components/dashboard/KindRatio';
 import { TrendChart } from '@/components/dashboard/TrendChart';
-import { QuickAddForm } from '@/components/transactions/QuickAddForm';
+import { QuickAddModal } from '@/components/transactions/QuickAddModal';
 import { TransactionList } from '@/components/transactions/TransactionList';
-import { Button, Card, CardTitle, Modal, cn } from '@/components/ui';
+import { Button, Card, CardTitle, cn } from '@/components/ui';
 
 const KY = [
   { value: 'today', label: 'Hôm nay' },
@@ -70,9 +70,7 @@ export default function DashboardPage() {
         <TransactionList filters={{ limit: 8 }} compact />
       </Card>
 
-      <Modal open={moForm} onClose={() => setMoForm(false)} title="Ghi khoản thu chi">
-        <QuickAddForm onDone={() => setMoForm(false)} />
-      </Modal>
+      <QuickAddModal open={moForm} onClose={() => setMoForm(false)} />
     </div>
   );
 }

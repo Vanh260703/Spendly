@@ -17,8 +17,10 @@ import { GoalsModule } from './modules/goals/goals.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { StatsModule } from './modules/stats/stats.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 import { UsersModule } from './modules/users/users.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
+import { CloudinaryModule } from './shared/cloudinary';
 import { RedisModule } from './shared/redis';
 
 @Module({
@@ -30,6 +32,7 @@ import { RedisModule } from './shared/redis';
     }),
     TypeOrmModule.forRoot(dataSourceOptions),
     RedisModule,
+    CloudinaryModule,
     // Cron chốt kỳ ngân sách hằng ngày
     ScheduleModule.forRoot(),
 
@@ -46,6 +49,7 @@ import { RedisModule } from './shared/redis';
     DebtsModule,
     AiModule,
     ExportModule,
+    UploadsModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },

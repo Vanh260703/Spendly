@@ -577,6 +577,15 @@ export class Contact extends BaseEntity {
   @Column({ default: '#64748b' })
   color: string;                 // màu avatar chữ cái đầu, cho dễ nhận mặt trong danh sách dài
 
+  @Column({ type: 'text', nullable: true })
+  qrImage?: string | null;       // URL ảnh QR chuyển tiền (Cloudinary secure_url), để lúc trả
+                                 // nợ khỏi phải đi hỏi lại QR. BE không đọc nội dung mã QR.
+
+  @Column({ type: 'varchar', nullable: true })
+  qrImagePublicId?: string | null; // public_id của chính tấm ảnh trên — CHỈ để xóa nó đi.
+                                 // Không có cột này thì thay QR là bỏ lại ảnh mồ côi vĩnh viễn.
+                                 // KHÔNG trả ra API.
+
   @Column({ default: false })
   isArchived: boolean;           // ẩn khỏi ô chọn người nhưng GIỮ lịch sử.
                                  // Xóa hẳn bị chặn khi công nợ ≠ 0.
@@ -895,6 +904,15 @@ Tự do tiêu         17.000.000₫
 Ghi lại những lần trả hộ / được trả hộ khi đi ăn, đi chơi, rồi xem mỗi người đang nợ mình
 (hoặc mình đang nợ họ) bao nhiêu.
 
+**Hai lối vào, tách bạch theo việc:**
+
+| Việc | Ở đâu |
+|---|---|
+| Thêm/sửa/xóa người, xem ai nợ bao nhiêu | `/contacts` — nút chính là **"Thêm người"** |
+| Ghi một lần chi chung | modal **"Ghi khoản"** → tab **"Chia bill"** (có ở Tổng quan và Giao dịch) |
+
+Thêm người **không cần** chia bill trước và bắt đầu ở **0₫** (xem §7).
+
 **Nguyên tắc nền — chỉ ghi `Transaction` khi tiền THẬT SỰ rời/vào ví.** Cùng nguyên tắc đã
 chốt ở `goals/contribute` (§4.5). Kết quả bất đối xứng nhưng đúng:
 
@@ -1097,6 +1115,10 @@ Quy ước:
 - **KHÔNG tự gộp tên có dấu với không dấu.** "Tuấn" và "Tuan" có thể là hai người thật; gộp nhầm thì công nợ sai và rất khó lần ra. Chỉ chống trùng do hoa/thường/khoảng trắng (`nameNormalized`). Gộp hai người là thao tác thủ công.
 - **Phần "mời" tách sang danh mục riêng và VẪN vào thống kê.** Đó là tiền tiêu thật, không ai trả lại. Gộp chung với "Ăn uống" thì AI khuyên *ăn ít lại* trong khi vấn đề thật là *mời hơi nhiều* — hai lời khuyên khác hẳn nhau.
 - **Không lưu cột `balance` trên `Contact`** — công nợ luôn tính bằng `SUM()`, cùng lý do đã chốt cho số dư ví. Chậm thì cache Redis.
+- **Thêm người vào danh bạ là thao tác ĐỘC LẬP, không phải hệ quả của một lần chia bill.** Trang `/contacts` có nút **"Thêm người"** (`ContactForm`, RHF + Zod); người mới bắt đầu ở **0₫** và **không có ô "nợ ban đầu"** — thêm ô đó là quay lại denormalize đúng thứ đã loại bỏ ở gạch đầu dòng trên. Khoản nợ có từ trước thì khai bằng một lần chi chung đúng ngày. Lối "gõ tên mới trong form chia bill → tự tạo" vẫn giữ nguyên, hai đường tồn tại song song (`SHARED_EXPENSES.md` §Contact).
+- **Ảnh QR chuyển tiền lưu trên Cloudinary, DB chỉ giữ URL.** FE xin chữ ký ở `GET /uploads/signature` rồi upload **thẳng** lên Cloudinary — file không đi qua BE (FE build tĩnh nên không có route handler để proxy, và đẩy qua BE là tốn gấp đôi băng thông), `CLOUDINARY_API_SECRET` chỉ nằm ở BE. Ba biến `CLOUDINARY_*` đều **optional**: thiếu thì app vẫn boot, chỉ endpoint chữ ký trả 503 — cùng cách đã làm với `LLM_API_KEY`. Cân nhắc đã bỏ: base64 nhét thẳng vào cột `text` thì backup tự chứa hơn (`docker/backup.sh` mang cả ảnh theo), nhưng chọn Cloudinary vì hạ tầng này dùng lại được nếu sau này lưu ảnh hóa đơn. ⚠️ **Đánh đổi phải nhớ: bản dump DB giờ KHÔNG còn tự chứa** — mất account Cloudinary là toàn bộ ảnh QR chết link trong khi DB vẫn trông như còn nguyên.
+- **Xóa ảnh trên Cloudinary luôn chạy SAU khi DB ghi xong, và không bao giờ ném lỗi.** Xóa hụt thì chỉ còn rác tốn quota; xóa trước mà DB lỗi thì bản ghi trỏ tới ảnh không còn tồn tại — hỏng nặng hơn. Cùng nguyên tắc suy giảm êm đang dùng cho Redis.
+- **Chia bill là TAB thứ hai trong modal "Ghi khoản"** (`components/transactions/QuickAddModal.tsx`), không còn là nút riêng ở `/contacts`. Lý do: chia bill là một cách *ghi chép dòng tiền*, nên thuộc về chỗ người ta ghi chép — `/contacts` để quản lý người và xem ai nợ bao nhiêu. Tab là ranh giới đúng thay vì thêm mảnh thứ ba vào thanh `Chi | Thu`: thanh đó chọn **chiều tiền**, còn tab chọn **kiểu ghi chép** — gộp lại thì một mảnh thay đổi toàn bộ nội dung form trong khi hai mảnh kia chỉ đổi danh mục.
 - **Chạy được cả bằng Docker lẫn Homebrew local.** `docker-compose.yml` dựng postgres + redis + be + fe; migration chạy tự động ở entrypoint của BE. FE trong Docker dùng **nginx phục vụ bản `output: 'export'`** — cùng thứ Cloudflare Pages làm, nên bản chạy local và bản deploy không lệch hành vi.
 - ⚠️ **`CREATE EXTENSION "uuid-ossp"` phải nằm trong migration `InitSchema`.** Mọi bảng dùng `uuid_generate_v4()` mà Postgres không bật extension đó sẵn. Trên máy dev nó được tạo tay nên lỗi bị che suốt; DB mới toanh (Docker, Railway) chết ngay ở câu `CREATE TABLE` đầu tiên.
 - **FE deploy dạng TĨNH lên Cloudflare Pages** (`output: 'export'`). App gọi API hoàn toàn từ client nên không cần SSR — đổi lại không dùng được route handler `app/api/*`, server action hay middleware.

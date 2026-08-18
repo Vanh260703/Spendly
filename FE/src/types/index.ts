@@ -247,6 +247,8 @@ export interface Contact {
   note?: string | null;
   color: string;
   isArchived: boolean;
+  /** URL ảnh QR chuyển tiền trên Cloudinary — `null` khi chưa lưu QR cho người này */
+  qrImage?: string | null;
   /** Dương = họ nợ bạn · Âm = bạn nợ họ */
   balance: number;
   lastActivityAt?: string | null;
