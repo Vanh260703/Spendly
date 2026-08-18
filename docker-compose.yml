@@ -1,0 +1,83 @@
+# Spendly — chạy toàn bộ bằng Docker.
+#
+#   docker compose up -d --build     dựng và chạy
+#   docker compose logs -f be        xem log API
+#   docker compose down              dừng (GIỮ dữ liệu)
+#   docker compose down -v           dừng và XÓA SẠCH dữ liệu
+#
+# Web:  http://localhost:3000     API: http://localhost:3001/api/v1
+#
+# ⚠️ Cổng Postgres/Redis cố ý KHÔNG mở ra máy thật (5432/6379 đang bị bản Homebrew chiếm).
+# Cần truy cập từ ngoài thì bỏ comment phần `ports` — nhớ đổi sang cổng khác.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: spendly
+      POSTGRES_PASSWORD: spendly
+      POSTGRES_DB: spendly
+    volumes:
+      # ⚠️ Postgres 18 đổi quy ước: mount ở `/var/lib/postgresql`, KHÔNG phải `.../data`.
+      # Mount kiểu cũ thì image từ chối khởi động ("unused mount/volume").
+      - pgdata:/var/lib/postgresql
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    # ports: ['5433:5432']
+    healthcheck:
+      # BE phải đợi Postgres SẴN SÀNG NHẬN LỆNH, không phải chỉ "container đã chạy" —
+      # thiếu bước này thì migration bắn vào lúc DB chưa mở cổng và container chết ngay.
+      test: ['CMD-SHELL', 'pg_isready -U spendly -d spendly']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    # Redis ở đây là CACHE, mất dữ liệu không sao (SPEC §7) — nên không gắn volume.
+    # ports: ['6380:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  be:
+    build:
+      context: ./BE
+    env_file:
+      - ./BE/.env
+    environment:
+      # Ghi đè lên .env: trong mạng compose, host là TÊN SERVICE chứ không phải localhost.
+      # `environment` được ưu tiên hơn `env_file` nên không cần sửa .env.
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: spendly
+      DB_PASSWORD: spendly
+      DB_NAME: spendly
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PORT: 3001
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - '3001:3001'
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  fe:
+    build:
+      context: ./FE
+      args:
+        # Build-time: trình duyệt của bạn gọi API từ NGOÀI mạng compose nên phải là
+        # localhost:3001, không phải http://be:3001.
+        NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+    ports:
+      - '3000:80'
+    depends_on:
+      - be
+    restart: unless-stopped
+
+volumes:
+  pgdata:

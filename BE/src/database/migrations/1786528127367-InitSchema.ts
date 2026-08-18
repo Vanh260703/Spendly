@@ -4,6 +4,15 @@ export class InitSchema1786528127367 implements MigrationInterface {
     name = 'InitSchema1786528127367'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
+        /*
+         * ⚠️ Mọi bảng dùng `uuid_generate_v4()` làm khóa chính, hàm đó thuộc extension
+         * `uuid-ossp` và Postgres KHÔNG bật sẵn.
+         *
+         * Trên máy dev extension được tạo tay nên không ai để ý. Nhưng DB mới toanh
+         * (Docker, Railway, máy đồng đội) sẽ chết ngay ở câu CREATE TABLE đầu tiên với
+         * `function uuid_generate_v4() does not exist`. Đặt ở đây để mọi môi trường tự lo.
+         */
+        await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
         await queryRunner.query(`CREATE TABLE "users" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "email" character varying NOT NULL, "passwordHash" character varying NOT NULL, "name" character varying NOT NULL, "avatarUrl" character varying, "timezone" character varying NOT NULL DEFAULT 'Asia/Ho_Chi_Minh', "monthStartDay" integer NOT NULL DEFAULT '1', "initialBalance" bigint NOT NULL DEFAULT '0', "startedAt" TIMESTAMP WITH TIME ZONE, "monthlyIncome" bigint, "onboardedAt" TIMESTAMP WITH TIME ZONE, CONSTRAINT "UQ_97672ac88f789774dd47f7c8be3" UNIQUE ("email"), CONSTRAINT "PK_a3ffb1c0c8416b9fc6f907b7433" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE TYPE "public"."categories_type_enum" AS ENUM('income', 'expense')`);
         await queryRunner.query(`CREATE TYPE "public"."categories_kind_enum" AS ENUM('need', 'want', 'saving')`);

@@ -1,0 +1,5 @@
+
+
+# Bản dump DB — chứa passwordHash, KHÔNG commit
+docker/spendly-dump-*.sql
+docker/backups/

@@ -20,7 +20,8 @@
     "verify:redis": "ts-node src/shared/redis/verify-redis.ts",
     "test:e2e": "jest --config test/jest-e2e.json --runInBand",
     "test": "npm run test:e2e",
-    "test:db:setup": "DB_NAME=spendly_test npx typeorm-ts-node-commonjs -d src/database/data-source.ts migration:run"
+    "test:db:setup": "DB_NAME=spendly_test npx typeorm-ts-node-commonjs -d src/database/data-source.ts migration:run",
+    "migration:run:prod": "typeorm migration:run -d dist/database/data-source.js"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

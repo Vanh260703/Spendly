@@ -212,16 +212,56 @@ Ghi chép chỉ là phương tiện. Giá trị thật của app là trả lời
 | `FE/` | `npm run dev` | Web tại http://localhost:3000 |
 | `FE/` | `npm run build` | Build tĩnh ra `out/` (kèm full typecheck) |
 
-### Hạ tầng: chạy LOCAL, không dùng Docker
+### Hạ tầng: Docker (chính) hoặc Homebrew local
 
-Postgres và Redis chạy trực tiếp trên máy (Homebrew) ở **cổng mặc định 5432 / 6379** — dự án cố ý **không có `docker-compose.yml`**. Đừng thêm Docker vào trừ khi user yêu cầu.
+**Chạy cả stack bằng Docker** — `docker-compose.yml` ở repo root:
 
-Thiết lập DB một lần (đã làm rồi, ghi lại để tái tạo trên máy khác):
+| Lệnh | Việc |
+|---|---|
+| `docker compose up -d --build` | dựng và chạy cả 4 service |
+| `docker compose logs -f be` | xem log API |
+| `docker compose down` | dừng, **giữ** dữ liệu |
+| `docker compose down -v` | dừng và **xóa sạch** dữ liệu |
+
+Web http://localhost:3000 · API http://localhost:3001/api/v1
+
+**Những chỗ đã trả giá khi dựng, đừng lặp lại:**
+- ⚠️ **Postgres 18 đổi quy ước thư mục dữ liệu**: volume phải mount ở `/var/lib/postgresql`, **không** phải `/var/lib/postgresql/data`. Mount kiểu cũ thì image từ chối khởi động với thông báo "unused mount/volume".
+- ⚠️ **`healthcheck` + `depends_on: condition: service_healthy` là bắt buộc**, không phải trang trí. `depends_on` trần chỉ đợi container *chạy*, không đợi Postgres *nhận lệnh* — migration sẽ bắn vào lúc DB chưa mở cổng và BE chết ngay.
+- ⚠️ **Migration chạy ở `docker-entrypoint.sh`, dùng `migration:run:prod`** (`typeorm migration:run -d dist/database/data-source.js`) chứ không phải script `ts-node` — image production không có devDependencies. Entrypoint cố ý **để lỗi làm chết container**: app chạy trên schema cũ nguy hiểm hơn là không chạy.
+- **Cổng Postgres/Redis không mở ra máy thật** (5432/6379 đang bị bản Homebrew chiếm). Cần thì bỏ comment `ports` trong compose và đổi sang 5433/6380.
+- **`NEXT_PUBLIC_API_URL` là build ARG của FE**, không phải biến runtime — đổi URL API phải **build lại image**. Giá trị phải là `localhost:3001` (trình duyệt gọi từ ngoài mạng compose), **không** phải `http://be:3001`.
+- FE image dùng **nginx** phục vụ `out/`, không cần Node lúc chạy — đúng thứ Cloudflare Pages làm khi deploy thật. `nginx.conf` để `try_files $uri $uri/ $uri/index.html` cho khớp `trailingSlash: true`.
+
+**Sao lưu & mang dữ liệu sang máy khác** — ⚠️ **volume `pgdata` KHÔNG đi theo git.**
+
+Chỉ *schema* đi theo repo (migration tự dựng lại). Trên máy mới, `docker compose up` cho ra **DB trắng**. `docker compose down -v` cũng xóa sạch volume ngay trên máy này.
+
+| Lệnh | Việc |
+|---|---|
+| `sh docker/backup.sh` | dump DB trong container ra `docker/backups/spendly-<timestamp>.sql` |
+| `sh docker/restore.sh <file.sql>` | nạp file dump vào container (**ghi đè toàn bộ**) |
+
+Cả hai đều **dừng container `be`** trong lúc thao tác để không ai ghi vào giữa chừng, và `restore` dùng `ON_ERROR_STOP=1` — nạp nửa chừng rồi lỗi mà vẫn bật app lên là tệ nhất.
+
+Sang máy mới: `git clone` → copy `BE/.env` (không có trong git) → `docker compose up -d --build` → `sh docker/restore.sh <file dump mang theo>`.
+
+⚠️ File dump chứa `passwordHash` — đã vào `.gitignore`, đừng commit và đừng gửi qua kênh công khai.
+
+**Chuyển dữ liệu từ Postgres Homebrew sang Docker**: `sh docker/migrate-local-to-docker.sh`
+
+Container khởi động với DB TRẮNG (migration chỉ dựng schema, không mang dữ liệu sang), nên lần đầu `docker compose up` xong đăng nhập vào sẽ **không thấy gì** — dữ liệu cũ vẫn nguyên ở Homebrew. Script dump bằng `pg_dump --clean --if-exists --no-owner` rồi nạp qua `docker compose exec -T postgres psql`; nó **dừng container `be`** trong lúc nạp để không ai ghi vào giữa chừng, và **chỉ ĐỌC** DB local nên chạy sai vẫn còn bản gốc. Bản dump được giữ lại ở `docker/spendly-dump-*.sql`.
+
+Kiểm chứng sau khi chuyển: đối chiếu `count(*)` từng bảng ở hai bên, và so lại số dư ví (`initialBalance + Σthu − Σchi`) — cột tiền là `bigint`, sai ở đây thì mọi con số khác sai theo.
+
+**Vẫn chạy được bằng Homebrew local** (cổng mặc định 5432 / 6379) — `npm run start:dev`, `npm test` đều nhắm vào đó. Thiết lập DB một lần:
 ```bash
 psql -U <user-cua-ban> -d postgres -c "CREATE ROLE spendly LOGIN PASSWORD 'spendly'"
 psql -U <user-cua-ban> -d postgres -c "CREATE DATABASE spendly OWNER spendly"
 ```
-Postgres local là **phiên bản 18** (migration `InitSchema` đã chạy OK trên bản này).
+⚠️ **`npm test` vẫn dùng Postgres của Homebrew**, không phải container — `.env.test` trỏ `localhost:5432`. Muốn test trên DB trong Docker thì mở cổng 5433 rồi sửa `.env.test`.
+
+⚠️ **Chạy Docker và `npm run start:dev` cùng lúc sẽ đá nhau ở cổng 3001.** Triệu chứng dễ nhầm: `GET /contacts` trả **404** (route không tồn tại) thay vì **401** — dấu hiệu tiến trình cũ đang chạy code cũ. Đã cắn hai lần rồi.
 
 Chưa có ESLint config (script `lint` trong `package.json` sẽ lỗi cho tới khi thêm).
 
