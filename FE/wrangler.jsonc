@@ -1,0 +1,32 @@
+{
+  // ⚠️ PHẢI trùng tên Worker/project bạn đã tạo trên Cloudflare. Lệch tên là wrangler sẽ
+  // deploy sang một Worker KHÁC (hoặc tạo mới) thay vì cập nhật cái đang có.
+  "name": "spendly",
+
+  "compatibility_date": "2026-08-18",
+
+  /*
+    Deploy TĨNH thuần: không có `main`, tức không có Worker script nào.
+
+    Đây là chủ ý — request chỉ đi qua đường phục vụ file tĩnh của Cloudflare, không khởi động
+    isolate, không tính CPU. Đúng thứ `output: 'export'` sinh ra và đúng thứ FE này cần: mọi
+    dữ liệu lấy từ BE qua fetch phía client, không có gì phải chạy ở máy chủ.
+  */
+  "assets": {
+    // Thư mục `next build` sinh ra (do `output: 'export'` trong next.config.ts).
+    // Đường dẫn tính từ thư mục chứa file này, nên Root directory trên Cloudflare
+    // phải đặt là `FE`.
+    "directory": "./out",
+
+    /*
+      `next.config.ts` đặt `trailingSlash: true`, nên mỗi route là một thư mục kèm
+      `index.html` (`out/dashboard/index.html`). `auto-trailing-slash` phục vụ được cả
+      `/dashboard` lẫn `/dashboard/` — chọn bản dễ tính này thay vì `force-trailing-slash`
+      để link cũ thiếu dấu `/` không bị 404.
+    */
+    "html_handling": "auto-trailing-slash",
+
+    // Next export có sinh `out/404.html` — trỏ vào đó thay vì để Cloudflare trả trang trắng
+    "not_found_handling": "404-page"
+  }
+}
