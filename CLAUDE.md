@@ -72,6 +72,7 @@ Thêm quy ước: mỗi thư mục trong `shared/` có **`index.ts` barrel** đ�
 ### Backend (NestJS + TypeORM)
 
 - **Cấu trúc module**: mỗi domain một module trong `src/modules/<tên>/` gồm `*.module.ts` / `*.controller.ts` / `*.service.ts` / `entities/` / `dto/`. Controller **chỉ** nhận request và gọi service — business logic nằm hết ở service.
+- ⚠️ **TLS Postgres bật bằng `DB_SSL=true`** (`config/env.ts` + `database/data-source.ts`). Bắt buộc với Neon/Supabase, phải TẮT với Postgres local. Giữ `rejectUnauthorized: true` — đừng đổi thành `false` cho hết lỗi, đó là tắt xác minh chứng chỉ. Và **đừng dùng `z.coerce.boolean()` cho biến env**: `Boolean("false")` ra `true`, nên `DB_SSL=false` sẽ bị hiểu thành BẬT.
 - **`synchronize: false` ở mọi môi trường.** Đổi schema → sinh migration (`typeorm migration:generate`) và commit vào `src/database/migrations/`. Không bao giờ để TypeORM tự sync.
 - **Chỉ một loại tiền: VND.** Không tạo cột `currency`, không quy đổi tỷ giá, không đa tiền tệ ở bất kỳ đâu.
 - ⚠️ **Cột nullable phải khai `type` tường minh**: `@Column({ type: 'varchar', nullable: true }) x?: string | null`. TypeORM suy kiểu cột từ metadata TS, mà union `string | null` bị đọc thành `Object` → app crash lúc boot với `DataTypeNotSupportedError`. Đồng thời phải khai `| null` vì TypeORM **trả về `null`**, không phải `undefined` — thiếu nó thì mọi `update()` với giá trị null đều lỗi type.

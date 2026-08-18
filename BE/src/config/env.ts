@@ -17,6 +17,28 @@ const envSchema = z.object({
   DB_PASSWORD: z.string().min(1),
   DB_NAME: z.string().min(1),
 
+  /**
+   * Bật TLS cho kết nối Postgres. Mặc định TẮT.
+   *
+   * Postgres quản lý (Neon, Supabase, Railway…) **chỉ** nhận kết nối TLS. Với Postgres local
+   * thì phải TẮT, nhưng lý do khác nhau tùy bản: image Docker và bản Homebrew không bật TLS,
+   * còn bản đóng gói của Ubuntu/Debian **có** bật sẵn — bằng một chứng chỉ **tự ký**, nên
+   * xác minh sẽ trượt. Cả hai trường hợp đều để `false`.
+   *
+   * Triệu chứng khi bật nhầm với Postgres local trên Ubuntu: app không boot được, log lặp
+   * `Unable to connect to the database. Retrying…` kèm `Error: self-signed certificate` —
+   * câu này không hề nhắc tới `DB_SSL` nên rất dễ đi tìm sai chỗ.
+   *
+   * ⚠️ **Cố ý KHÔNG dùng `z.coerce.boolean()`.** `Boolean("false")` trong JavaScript trả về
+   * `true` (chuỗi không rỗng là truthy), nên khai `DB_SSL=false` sẽ bị hiểu ngược thành BẬT,
+   * và Postgres local không kết nối nổi với một lỗi chẳng liên quan gì tới SSL. Phải so
+   * chuỗi tường minh. Lưu ý `z.coerce.number()` ở trên KHÔNG dính lỗi này — chỉ boolean mới bị.
+   */
+  DB_SSL: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+
   REDIS_HOST: z.string().min(1),
   REDIS_PORT: z.coerce.number().int().positive(),
 
