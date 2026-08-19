@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    Favicon Spendly — ký hiệu ₫ (đồng) trên nền màu brand.
+
+    Vì sao là ₫ chứ không phải $ hay biểu tượng ví: app này CHỈ dùng VND (quyết định đã chốt
+    ở SPEC — không có cột currency, không quy đổi tỷ giá). Dùng $ là nói sai về sản phẩm,
+    còn ví/túi tiền thì chung chung, trùng với hàng trăm app khác.
+
+    Vẽ bằng nét (stroke) thay vì đặt ký tự "₫" trong <text>: favicon được render bởi trình
+    duyệt, mà font có sẵn thì mỗi máy một khác — ký tự ₫ có thể ra ô vuông trên máy thiếu font.
+    Hình vẽ thì ở đâu cũng giống nhau.
+
+    Kích thước nét và bố cục chọn để đọc được ở 16px — cỡ thật của tab trình duyệt.
+  -->
+  <rect width="32" height="32" rx="7" fill="#10b981"/>
+  <g fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Gạch ngang xuyên thân chữ — nét đặc trưng phân biệt ₫ với chữ d thường -->
+    <path d="M11 10.5 H22"/>
+    <!-- Thân chữ -->
+    <path d="M17.5 7 V25.5"/>
+    <!-- Bụng chữ, nửa cung tròn bên trái -->
+    <path d="M17.5 14 A5.75 5.75 0 0 0 17.5 25.5"/>
+  </g>
+</svg>

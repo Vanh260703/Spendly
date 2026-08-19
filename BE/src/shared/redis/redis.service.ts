@@ -120,11 +120,35 @@ export class RedisService implements OnModuleDestroy {
    * cho gọi AI thì sẽ đốt sạch quota; thà chặn còn hơn.
    */
   async incrDaily(key: string, ttlSeconds: number): Promise<number> {
-    const [[, count]] = (await this.client
-      .multi()
-      .incr(key)
-      .expire(key, ttlSeconds, 'NX') // NX = chỉ đặt TTL khi key chưa có hạn
-      .exec()) as [[Error | null, number], [Error | null, number]];
+    /*
+      Dùng Lua thay vì `EXPIRE key ttl NX`.
+
+      ⚠️ **`NX` của `EXPIRE` chỉ có từ Redis 7.0.** Trên Redis 6 (bản đóng gói sẵn của
+      Ubuntu là 6.0.16), lệnh đó bị từ chối NGAY LÚC XẾP HÀNG trong `MULTI`, làm cả
+      transaction hỏng với `EXECABORT Transaction discarded because of previous errors` —
+      một câu lỗi không hề nhắc tới `EXPIRE` hay phiên bản, nên rất khó lần ra. Vì
+      `incrDaily()` cố ý không suy giảm êm, lỗi này nổi thẳng thành **500** ở mọi endpoint AI.
+      Không lộ ra sớm hơn vì `docker-compose.yml` dùng `redis:7-alpine`.
+
+      Script này chạy được từ Redis 2.6 và vẫn giữ nguyên hai tính chất cần có:
+      - **nguyên tử**: đếm và đặt hạn nằm trong cùng một lần thực thi, không xen kẽ được
+      - **không gia hạn cửa sổ**: chỉ đặt TTL khi key chưa có hạn (`TTL < 0`), nên cửa sổ
+        tính từ lượt gọi đầu tiên chứ không bị đẩy lùi mỗi lần gọi
+
+      Kiểm tra `TTL < 0` mỗi lần (thay vì chỉ khi `count == 1`) còn tự chữa được key lỡ
+      sinh ra mà không có hạn — nếu không thì bộ đếm ngày không bao giờ reset và user bị
+      chặn AI vĩnh viễn.
+    */
+    const count = (await this.client.eval(
+      `local c = redis.call('INCR', KEYS[1])
+       if redis.call('TTL', KEYS[1]) < 0 then
+         redis.call('EXPIRE', KEYS[1], ARGV[1])
+       end
+       return c`,
+      1,
+      key,
+      String(ttlSeconds),
+    )) as number;
 
     return count;
   }
