@@ -34,32 +34,43 @@ const shareSchema = z.object({
   amount: tienDuong,
 });
 
+/**
+ * Ghi một lần chi chung. Hai hình dạng, phân biệt bằng `payerContactId`:
+ *
+ * - **Bạn trả** (`payerContactId: null`) → bắt buộc có `transactionId`: tiền đã rời tài
+ *   khoản và ngân hàng đã báo về, nên KHÔNG tạo giao dịch mới mà **tách giao dịch có sẵn**.
+ *   Tạo mới là đếm tiền hai lần.
+ * - **Người khác trả** → không có giao dịch nào (tiền chưa rời tài khoản bạn), nên cần
+ *   `totalAmount` + `date` khai tay.
+ */
 export const createSharedExpenseSchema = z
   .object({
-    /** `null` = BẠN trả. Có giá trị = người đó trả hộ bạn. */
     payerContactId: z.string().uuid().nullable().default(null),
-    totalAmount: tienDuong,
-    date: z.coerce.date(),
+    /** Giao dịch ngân hàng cần tách — CHỈ khi bạn là người trả */
+    transactionId: z.string().uuid().optional().nullable(),
+    /** Chỉ dùng khi người khác trả; bạn trả thì lấy từ giao dịch ngân hàng */
+    totalAmount: tienDuong.optional(),
+    date: z.coerce.date().optional(),
     note: z.string().trim().max(255).optional().nullable(),
-    categoryId: z.string().uuid(),
+    /**
+     * Tùy chọn — giao diện không còn hỏi danh mục.
+     *
+     * Bỏ trống thì phần của bạn rơi vào `"Chưa phân loại"`. Danh mục giờ chỉ còn một nhiệm
+     * vụ duy nhất: tách **tiền cho mượn** ra khỏi tiền tiêu thật, và việc đó app tự làm.
+     */
+    categoryId: z.string().uuid().optional().nullable(),
     treatAmount: tienKhongAm.default(0),
     treatCategoryId: z.string().uuid().optional().nullable(),
     shares: z.array(shareSchema).min(1, 'Phải có ít nhất một phần'),
   })
-  /*
-   * Bất biến quan trọng nhất của cả tính năng. Lệch một đồng là công nợ sai vĩnh viễn và
-   * không có cách nào tự phát hiện về sau — nên chặn ngay ở cửa, kèm cả hai con số để user
-   * biết lệch bao nhiêu chứ không phải một câu "dữ liệu không hợp lệ".
-   */
-  .refine(
-    (d) => d.shares.reduce((t, s) => t + s.amount, 0) === d.totalAmount,
-    (d) => ({
-      message:
-        `Tổng các phần (${d.shares.reduce((t, s) => t + s.amount, 0).toLocaleString('vi-VN')}₫) ` +
-        `phải bằng hóa đơn (${d.totalAmount.toLocaleString('vi-VN')}₫)`,
-      path: ['shares'],
-    }),
-  )
+  .refine((d) => d.payerContactId !== null || !!d.transactionId, {
+    message: 'Bạn trả thì phải chọn giao dịch ngân hàng tương ứng để tách',
+    path: ['transactionId'],
+  })
+  .refine((d) => d.payerContactId === null || (!!d.totalAmount && !!d.date), {
+    message: 'Người khác trả thì phải khai số tiền và ngày',
+    path: ['totalAmount'],
+  })
   // Mỗi người chỉ được một phần; phần của bạn (`contactId: null`) cũng vậy
   .refine(
     (d) => new Set(d.shares.map((s) => s.contactId)).size === d.shares.length,

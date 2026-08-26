@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Category } from '../categories/entities/category.entity';
-import { Wallet } from '../wallets/entities/wallet.entity';
+import { BankAccount } from '../bank-accounts/entities/bank-account.entity';
 import { ContactsController } from './contacts.controller';
 import { Contact } from './entities/contact.entity';
 import { Settlement } from './entities/settlement.entity';
@@ -27,7 +27,7 @@ import {
       SharedExpenseShare,
       Settlement,
       Category,
-      Wallet,
+      BankAccount,
     ]),
   ],
   controllers: [ContactsController, SharedExpensesController, SettlementsController],

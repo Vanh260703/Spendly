@@ -17,12 +17,8 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
-  AdjustBalanceDto,
-  CreateTransactionDto,
   ListTransactionQuery,
   UpdateTransactionDto,
-  adjustBalanceSchema,
-  createTransactionSchema,
   listTransactionQuerySchema,
   toTransactionDto,
   updateTransactionSchema,
@@ -43,29 +39,16 @@ export class TransactionsController {
     return { items: items.map(toTransactionDto), nextCursor };
   }
 
-  @Post()
-  async create(
-    @CurrentUser() user: AuthUser,
-    @Body(new ZodValidationPipe(createTransactionSchema)) dto: CreateTransactionDto,
-  ) {
-    return toTransactionDto(await this.transactions.create(user.id, dto));
-  }
-
-  /**
-   * Đặt TRƯỚC `:id` — nếu không, Nest sẽ khớp "adjust-balance" vào `:id`
-   * và `ParseUUIDPipe` ném 400.
+  /*
+   * ⚠️ KHÔNG có `POST /transactions`.
+   *
+   * Giao dịch chỉ đến từ HAI nguồn: webhook SePay, và việc tách một giao dịch ngân hàng khi
+   * chia bill. Cho nhập tay thì số dư app tự tính sẽ lệch khỏi số dư ngân hàng báo về, mà
+   * ngân hàng mới là nguồn sự thật.
+   *
+   * `POST /transactions/adjust-balance` cũng bỏ vì lý do tương tự: `accumulated` của webhook
+   * đã là số dư thật, không có gì để "điều chỉnh".
    */
-  @Post('adjust-balance')
-  async adjustBalance(
-    @CurrentUser() user: AuthUser,
-    @Body(new ZodValidationPipe(adjustBalanceSchema)) dto: AdjustBalanceDto,
-  ) {
-    const kq = await this.transactions.adjustBalance(user.id, dto);
-    return {
-      ...kq,
-      transaction: kq.transaction ? toTransactionDto(kq.transaction) : null,
-    };
-  }
 
   @Get(':id')
   async findOne(

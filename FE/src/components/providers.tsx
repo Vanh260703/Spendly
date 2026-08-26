@@ -3,7 +3,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
-import { useAuthStore } from '@/stores/auth-store';
 
 /**
  * Đọc localStorage vào zustand SAU khi mount.
@@ -13,8 +12,6 @@ import { useAuthStore } from '@/stores/auth-store';
  */
 function StoreHydrator() {
   useEffect(() => {
-    void useAuthStore.persist.rehydrate();
-    useAuthStore.getState().setHydrated();
   }, []);
   return null;
 }

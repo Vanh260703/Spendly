@@ -39,7 +39,9 @@ export async function createTestApp(): Promise<TestContext> {
 /** Xóa sạch dữ liệu giữa các file test. `CASCADE` lo phần khóa ngoại. */
 export async function truncateAll(dataSource: DataSource): Promise<void> {
   await dataSource.query(
-    'TRUNCATE TABLE users, categories, wallets, transactions, budgets, budget_period_results, goals, goal_contributions, debts, debt_payments, ai_insights, chat_messages RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE users, categories, bank_accounts, transactions, ' +
+      'contacts, shared_expenses, shared_expense_shares, settlements, ' +
+      'sepay_webhook_logs RESTART IDENTITY CASCADE',
   );
 }
 

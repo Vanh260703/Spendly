@@ -18,7 +18,7 @@
     "schema:log": "npm run typeorm -- schema:log",
     "verify:money": "ts-node src/database/verify-money.ts",
     "verify:redis": "ts-node src/shared/redis/verify-redis.ts",
-    "test:e2e": "jest --config test/jest-e2e.json --runInBand",
+    "test:e2e": "jest --config test/jest-e2e.json --runInBand --forceExit",
     "test": "npm run test:e2e",
     "test:db:setup": "DB_NAME=spendly_test npx typeorm-ts-node-commonjs -d src/database/data-source.ts migration:run",
     "migration:run:prod": "typeorm migration:run -d dist/database/data-source.js"

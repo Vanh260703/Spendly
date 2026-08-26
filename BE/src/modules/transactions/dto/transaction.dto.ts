@@ -24,8 +24,17 @@ export const updateTransactionSchema = createTransactionSchema
   .refine((d) => Object.keys(d).length > 0, 'Không có gì để cập nhật');
 
 export const listTransactionQuerySchema = z.object({
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  /**
+   * `yyyy-mm-dd` — giữ dạng CHUỖI, không `coerce.date()`.
+   *
+   * ⚠️ `z.coerce.date()` đổi `"2026-08-26"` thành `2026-08-26T00:00:00Z`. Hai hệ quả sai:
+   * `to` loại bỏ mọi giao dịch trong chính ngày đó (vì chúng đều > 00:00), còn `from` thì
+   * cắt mất buổi sáng sớm giờ VN (00:00–07:00 VN nằm ở ngày hôm trước theo UTC).
+   *
+   * Service mới là chỗ nới ra thành trọn ngày THEO MÚI GIỜ NGƯỜI DÙNG.
+   */
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải dạng yyyy-mm-dd').optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải dạng yyyy-mm-dd').optional(),
   categoryId: z.string().uuid().optional(),
   type: z.nativeEnum(TxType).optional(),
   /** CSV: `tags=du-lich,cong-viec` */
@@ -64,7 +73,6 @@ export interface TransactionDto {
     name: string;
     icon: string;
     color: string;
-    kind: string;
   } | null;
 }
 
@@ -83,7 +91,6 @@ export function toTransactionDto(t: Transaction & { category?: Category }): Tran
           name: t.category.name,
           icon: t.category.icon,
           color: t.category.color,
-          kind: t.category.kind,
         }
       : null,
   };

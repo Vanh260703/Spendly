@@ -43,7 +43,6 @@ export class CategoriesService {
         userId,
         isSystem: false,
         ...(query.type && { type: query.type }),
-        ...(query.kind && { kind: query.kind }),
       },
       order: { type: 'ASC', name: 'ASC' },
     });

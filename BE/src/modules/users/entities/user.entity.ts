@@ -1,20 +1,15 @@
 import { Column, Entity } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
-import { money } from '../../../common/transformers/money.transformer';
 
+/**
+ * Người dùng — **luôn có đúng MỘT dòng** (xem `SingleUserService`).
+ *
+ * App không còn đăng nhập nên không có `email`/`passwordHash`. Bảng vẫn tồn tại vì mọi
+ * entity khác khóa ngoại tới nó, và cài đặt cá nhân (`timezone`, `monthStartDay`) phải
+ * nằm ở đâu đó.
+ */
 @Entity('users')
 export class User extends BaseEntity {
-  /** Email đăng nhập, không trùng nhau */
-  @Column({ unique: true })
-  email: string;
-
-  /**
-   * Mật khẩu đã băm bằng argon2id.
-   * KHÔNG BAO GIỜ lưu mật khẩu gốc, và không bao giờ trả field này ra API.
-   */
-  @Column({ select: false })
-  passwordHash: string;
-
   /** Tên hiển thị, VD "Việt Anh" */
   @Column()
   name: string;
@@ -35,15 +30,8 @@ export class User extends BaseEntity {
   @Column({ type: 'int', default: 1 })
   monthStartDay: number;
 
-  // Số dư ban đầu + mốc bắt đầu nằm ở entity `Wallet` (quan hệ 1–1, tạo tự động lúc đăng ký),
   // không phải ở đây.
 
-  /**
-   * Thu nhập hàng tháng ước tính — hỏi lúc onboarding, dùng để gợi ý ngân sách theo
-   * khung 50/30/20 và để AI quy đổi "khoản này chiếm bao nhiêu % thu nhập".
-   */
-  @Column({ type: 'bigint', nullable: true, transformer: money })
-  monthlyIncome?: number | null;
 
   /** null = chưa qua onboarding → FE điều hướng vào màn hình thiết lập ban đầu */
   @Column({ type: 'timestamptz', nullable: true })

@@ -5,7 +5,7 @@ import { ZodType, ZodTypeDef } from 'zod';
  * Validate body/query bằng Zod: `@Body(new ZodValidationPipe(loginSchema)) dto: LoginDto`.
  *
  * Dùng Zod thay vì class-validator để sau này FE và BE **dùng chung một schema**
- * (xem `SPEC.md` §5) — định nghĩa quy tắc hai lần là chắc chắn có ngày lệch nhau.
+ * — định nghĩa quy tắc hai lần là chắc chắn có ngày lệch nhau.
  *
  * Trả `400` kèm thông báo tiếng Việt đọc được, không phải chuỗi lỗi thô của Zod.
  */

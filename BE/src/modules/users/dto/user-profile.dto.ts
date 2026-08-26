@@ -1,21 +1,20 @@
-import { Wallet } from '../../wallets/entities/wallet.entity';
+import { BankAccount } from '../../bank-accounts/entities/bank-account.entity';
 import { User } from '../entities/user.entity';
 
-/** Hình dạng user trả ra API — khớp với `API_ENDPOINTS.md` §2.1 */
+/** Hình dạng user trả ra API */
 export interface UserProfileDto {
   id: string;
-  email: string;
   name: string;
   avatarUrl: string | null;
   timezone: string;
   monthStartDay: number;
-  monthlyIncome: number | null;
   onboardedAt: Date | null;
-  wallet?: {
+  bankAccount?: {
     id: string;
-    name: string;
-    initialBalance: number;
-    startedAt: Date | null;
+    accountNumber: string;
+    bankName: string;
+    nickname: string;
+    currentBalance: number;
   };
 }
 
@@ -29,22 +28,21 @@ export interface UserProfileDto {
  * (`passwordHash` còn có thêm lớp bảo vệ `select: false` ở entity nên vốn đã không được
  * load — nhưng không dựa vào một mình nó, vì `addSelect` ở đâu đó là mất tác dụng.)
  */
-export function toUserProfile(user: User, wallet?: Wallet): UserProfileDto {
+export function toUserProfile(user: User, account?: BankAccount): UserProfileDto {
   return {
     id: user.id,
-    email: user.email,
     name: user.name,
     avatarUrl: user.avatarUrl ?? null,
     timezone: user.timezone,
     monthStartDay: user.monthStartDay,
-    monthlyIncome: user.monthlyIncome ?? null,
     onboardedAt: user.onboardedAt ?? null,
-    ...(wallet && {
-      wallet: {
-        id: wallet.id,
-        name: wallet.name,
-        initialBalance: wallet.initialBalance,
-        startedAt: wallet.startedAt ?? null,
+    ...(account && {
+      bankAccount: {
+        id: account.id,
+        accountNumber: account.accountNumber,
+        bankName: account.bankName,
+        nickname: account.nickname,
+        currentBalance: account.currentBalance,
       },
     }),
   };

@@ -10,7 +10,7 @@ import { RedisKeys, RedisService } from '../../shared/redis';
 import { SYSTEM_CATEGORY } from '../categories/default-categories';
 import { Category, CategoryType } from '../categories/entities/category.entity';
 import { Transaction, TxType } from '../transactions/entities/transaction.entity';
-import { Wallet } from '../wallets/entities/wallet.entity';
+import { BankAccount } from '../bank-accounts/entities/bank-account.entity';
 import {
   ContactDto,
   CreateContactDto,
@@ -37,7 +37,7 @@ export class FriendsService {
     @InjectRepository(SharedExpense) private readonly expenses: Repository<SharedExpense>,
     @InjectRepository(Settlement) private readonly settlements: Repository<Settlement>,
     @InjectRepository(Category) private readonly categories: Repository<Category>,
-    @InjectRepository(Wallet) private readonly wallets: Repository<Wallet>,
+    @InjectRepository(BankAccount) private readonly bankAccounts: Repository<BankAccount>,
     private readonly dataSource: DataSource,
     private readonly redis: RedisService,
   ) {}
@@ -277,11 +277,23 @@ export class FriendsService {
   /**
    * Ghi một lần chi chung.
    *
-   * Bạn trả → sinh tối đa 3 giao dịch (thực ăn · mời · cho mượn).
-   * Người khác trả → **không giao dịch nào** (tiền chưa rời ví bạn).
+   * ⚠️ **Bạn trả → TÁCH giao dịch ngân hàng có sẵn, KHÔNG tạo giao dịch mới.**
    *
-   * Toàn bộ nằm trong MỘT transaction DB: nửa chừng lỗi mà đã kịp tạo 2/3 giao dịch thì số
-   * dư lệch vĩnh viễn.
+   * Ngân hàng đã báo khoản chi 1.000.000₫ đó rồi. Tạo thêm 3 giao dịch nữa là **đếm tiền
+   * hai lần** — số dư app tính ra sẽ thấp hơn thực tế đúng một lần hóa đơn. Thay vào đó:
+   *
+   * ```
+   * Giao dịch gốc  1.000.000₫  →  thu nhỏ còn  250.002₫  (phần bạn thực ăn)
+   *                              + thêm dòng   250.000₫  (phần mời)
+   *                              + thêm dòng   499.998₫  (cho mượn, danh mục hệ thống)
+   *                                          ─────────────
+   *                                            1.000.000₫  ← TỔNG KHÔNG ĐỔI
+   * ```
+   *
+   * Giữ được bất biến "tổng không đổi" thì số dư không bao giờ lệch, và dòng gốc vẫn mang
+   * `sepayId` nên chống trùng tiếp tục hoạt động.
+   *
+   * Người khác trả → **không giao dịch nào**: tiền chưa rời tài khoản bạn.
    */
   async createSharedExpense(userId: string, dto: CreateSharedExpenseDto) {
     const contactIds = [
@@ -290,58 +302,102 @@ export class FriendsService {
     ];
     await this.kiemTraContactThuocUser(userId, contactIds);
 
-    const category = await this.layDanhMucChi(userId, dto.categoryId);
+    /*
+     * Không khai danh mục thì dùng "Chưa phân loại" — giao diện đã bỏ hẳn phần chọn danh
+     * mục, nên đây là đường đi mặc định chứ không phải trường hợp hiếm.
+     */
+    const category = dto.categoryId
+      ? await this.layDanhMucChi(userId, dto.categoryId)
+      : await this.layDanhMucMacDinh(userId);
     const treatCategory = dto.treatCategoryId
       ? await this.layDanhMucChi(userId, dto.treatCategoryId)
       : null;
 
+    const toiTra = dto.payerContactId === null;
     const phanCuaToi = dto.shares.find((s) => s.contactId === null)?.amount ?? 0;
     const choMuon = dto.shares
       .filter((s) => s.contactId !== null)
       .reduce((t, s) => t + s.amount, 0);
 
+    const goc = toiTra ? await this.layGiaoDichDeTach(userId, dto.transactionId!) : null;
+    const tongHoaDon = goc ? goc.amount : dto.totalAmount!;
+    const ngay = goc ? goc.date : dto.date!;
+
+    /*
+     * Bất biến quan trọng nhất của cả tính năng: tổng các phần phải khớp hóa đơn. Kiểm ở
+     * đây chứ không ở Zod, vì khi bạn trả thì số tiền lấy từ GIAO DỊCH NGÂN HÀNG — Zod
+     * không nhìn thấy con số đó.
+     */
+    const tongCacPhan = dto.shares.reduce((t, s) => t + s.amount, 0);
+    if (tongCacPhan !== tongHoaDon) {
+      throw new BadRequestException(
+        `Tổng các phần (${tongCacPhan.toLocaleString('vi-VN')}₫) phải bằng ` +
+          `hóa đơn (${tongHoaDon.toLocaleString('vi-VN')}₫)`,
+      );
+    }
+
     const saved = await this.dataSource.transaction(async (em) => {
-      const toiTra = dto.payerContactId === null;
+      let txMine: Transaction | null = null;
+      let txTreat: Transaction | null = null;
+      let txLent: Transaction | null = null;
 
-      // Người khác trả hộ → tiền chưa rời ví bạn → KHÔNG giao dịch nào.
-      // Khoản chi của bạn chỉ xuất hiện lúc bạn tất toán (SPEC §4.6).
-      const txMine = toiTra
-        ? await this.taoGiaoDich(em, userId, {
-            categoryId: category.id,
-            amount: phanCuaToi - dto.treatAmount,
-            date: dto.date,
-            note: dto.note ?? 'Phần của tôi',
+      if (goc) {
+        const phanThucAn = phanCuaToi - dto.treatAmount;
+
+        if (phanThucAn > 0) {
+          // Dùng LẠI dòng gốc cho phần thực ăn — giữ nguyên `sepayId`/`referenceCode`
+          await em.update(
+            Transaction,
+            { id: goc.id },
+            { amount: phanThucAn, categoryId: category.id, note: dto.note ?? goc.note },
+          );
+          txMine = { ...goc, amount: phanThucAn } as Transaction;
+        } else {
+          /*
+           * Bạn không ăn miếng nào (mời trọn phần của mình, hoặc trả hộ hoàn toàn).
+           * Không để lại dòng 0₫ — biến dòng gốc thành phần cho mượn luôn.
+           */
+          await em.update(
+            Transaction,
+            { id: goc.id },
+            {
+              amount: choMuon,
+              categoryId: (await this.layDanhMucTraHo(userId, TxType.EXPENSE)).id,
+              note: dto.note ? `Trả hộ — ${dto.note}` : 'Trả hộ bạn bè',
+            },
+          );
+          txLent = { ...goc, amount: choMuon } as Transaction;
+        }
+
+        if (dto.treatAmount > 0 && treatCategory) {
+          txTreat = await this.taoGiaoDich(em, userId, {
+            categoryId: treatCategory.id,
+            amount: dto.treatAmount,
+            date: ngay,
+            note: dto.note ? `Mời — ${dto.note}` : 'Mời bạn bè',
             type: TxType.EXPENSE,
-          })
-        : null;
+            bankAccountId: goc.bankAccountId,
+          });
+        }
 
-      const txTreat =
-        toiTra && treatCategory
-          ? await this.taoGiaoDich(em, userId, {
-              categoryId: treatCategory.id,
-              amount: dto.treatAmount,
-              date: dto.date,
-              note: dto.note ? `Mời — ${dto.note}` : 'Mời bạn bè',
-              type: TxType.EXPENSE,
-            })
-          : null;
-
-      const txLent = toiTra
-        ? await this.taoGiaoDich(em, userId, {
+        if (!txLent && choMuon > 0) {
+          txLent = await this.taoGiaoDich(em, userId, {
             categoryId: (await this.layDanhMucTraHo(userId, TxType.EXPENSE)).id,
             amount: choMuon,
-            date: dto.date,
+            date: ngay,
             note: dto.note ? `Trả hộ — ${dto.note}` : 'Trả hộ bạn bè',
             type: TxType.EXPENSE,
-          })
-        : null;
+            bankAccountId: goc.bankAccountId,
+          });
+        }
+      }
 
       const expense = await em.save(
         em.create(SharedExpense, {
           userId,
           payerContactId: dto.payerContactId,
-          totalAmount: dto.totalAmount,
-          date: dto.date,
+          totalAmount: tongHoaDon,
+          date: ngay,
           note: dto.note ?? null,
           categoryId: category.id,
           treatAmount: dto.treatAmount,
@@ -367,6 +423,30 @@ export class FriendsService {
 
     await this.xoaCacheThongKe(userId);
     return this.getSharedExpense(userId, saved.id);
+  }
+
+  /**
+   * Giao dịch ngân hàng đủ điều kiện để tách.
+   *
+   * Chặn tách hai lần: một giao dịch đã bị tách rồi thì `amount` của nó không còn là tổng
+   * hóa đơn nữa, tách tiếp sẽ ra số vô nghĩa.
+   */
+  private async layGiaoDichDeTach(userId: string, id: string): Promise<Transaction> {
+    const tx = await this.dataSource.manager.findOneBy(Transaction, { id, userId });
+    if (!tx) throw new NotFoundException('Không tìm thấy giao dịch');
+    if (tx.type !== TxType.EXPENSE) {
+      throw new BadRequestException('Chỉ tách được giao dịch CHI');
+    }
+
+    const daTach = await this.expenses
+      .createQueryBuilder('e')
+      .where('e."transactionIdMine" = :id OR e."transactionIdTreat" = :id OR e."transactionIdLent" = :id', { id })
+      .getExists();
+    if (daTach) {
+      throw new ConflictException('Giao dịch này đã được chia cho bạn bè rồi');
+    }
+
+    return tx;
   }
 
   async listSharedExpenses(userId: string, dto: ListSharedExpensesDto) {
@@ -402,10 +482,11 @@ export class FriendsService {
   }
 
   /**
-   * Xóa một lần chi chung — **xóa kèm cả 3 giao dịch** đã sinh, trong cùng một transaction DB.
+   * Xóa một lần chia bill — **KHÔI PHỤC giao dịch ngân hàng về nguyên trạng**.
    *
-   * Bỏ sót một giao dịch là số dư lệch vĩnh viễn mà không ai biết vì sao. FK của các
-   * `transactionId*` là `RESTRICT` nên phải xóa `SharedExpense` TRƯỚC rồi mới xóa giao dịch.
+   * Không xóa sạch cả ba như trước: dòng mang `sepayId` là bản ghi gốc của ngân hàng, xóa
+   * nó đi là mất bằng chứng và webhook cũng không gửi lại (đã tính là đã xử lý). Thay vào
+   * đó trả nó về đúng số tiền hóa đơn, rồi xóa những dòng con do việc tách sinh ra.
    */
   async deleteSharedExpense(userId: string, id: string): Promise<void> {
     const e = await this.expenses.findOneBy({ id, userId });
@@ -416,9 +497,25 @@ export class FriendsService {
     );
 
     await this.dataSource.transaction(async (em) => {
+      const txs = txIds.length
+        ? await em.findBy(Transaction, { id: In(txIds) })
+        : [];
+
+      // Dòng gốc từ ngân hàng nhận ra bằng `sepayId` — dòng con luôn có `sepayId = null`
+      const goc = txs.find((t) => t.sepayId !== null && t.sepayId !== undefined);
+      const con = txs.filter((t) => t.id !== goc?.id);
+
       await em.delete(SharedExpenseShare, { sharedExpenseId: e.id });
       await em.delete(SharedExpense, { id: e.id });
-      if (txIds.length) await em.delete(Transaction, { id: In(txIds) });
+
+      if (goc) {
+        await em.update(
+          Transaction,
+          { id: goc.id },
+          { amount: e.totalAmount, categoryId: e.categoryId, note: e.note ?? null },
+        );
+      }
+      if (con.length) await em.delete(Transaction, { id: In(con.map((t) => t.id)) });
     });
 
     await this.xoaCacheThongKe(userId);
@@ -539,6 +636,22 @@ export class FriendsService {
     return c;
   }
 
+  /** Chỗ hứng mặc định khi không ai chọn danh mục */
+  private async layDanhMucMacDinh(userId: string): Promise<Category> {
+    const c = await this.categories.findOneBy({
+      userId,
+      isSystem: true,
+      name: SYSTEM_CATEGORY.CHUA_PHAN_LOAI,
+      type: CategoryType.EXPENSE,
+    });
+    if (!c) {
+      throw new NotFoundException(
+        `Không tìm thấy danh mục hệ thống "${SYSTEM_CATEGORY.CHUA_PHAN_LOAI}"`,
+      );
+    }
+    return c;
+  }
+
   /** Danh mục hệ thống "Trả hộ bạn bè" — phải lọc CẢ TÊN vì mỗi chiều có 2 danh mục hệ thống */
   private async layDanhMucTraHo(userId: string, type: TxType): Promise<Category> {
     const c = await this.categories.findOneBy({
@@ -567,17 +680,27 @@ export class FriendsService {
   private async taoGiaoDich(
     em: EntityManager,
     userId: string,
-    args: { categoryId: string; amount: number; date: Date; note: string; type: TxType },
+    args: {
+      categoryId: string;
+      amount: number;
+      date: Date;
+      note: string;
+      type: TxType;
+      /** Tài khoản của giao dịch gốc — dòng con phải nằm cùng chỗ với dòng nó tách ra */
+      bankAccountId?: string;
+    },
   ): Promise<Transaction | null> {
     if (args.amount <= 0) return null;
 
-    const wallet = await em.findOneBy(Wallet, { userId });
-    if (!wallet) throw new NotFoundException('Không tìm thấy ví');
+    const bankAccountId =
+      args.bankAccountId ??
+      (await em.findOneBy(BankAccount, { userId }))?.id;
+    if (!bankAccountId) throw new NotFoundException('Chưa liên kết tài khoản ngân hàng nào');
 
     return em.save(
       em.create(Transaction, {
         userId,
-        walletId: wallet.id,
+        bankAccountId,
         categoryId: args.categoryId,
         type: args.type,
         amount: args.amount,

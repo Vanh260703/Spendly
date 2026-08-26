@@ -1,132 +1,137 @@
 'use client';
 
-import { Receipt, Trash2 } from 'lucide-react';
-import { Button, Card, CategoryIcon, EmptyState, ErrorState, Skeleton } from '@/components/ui';
-import { useDeleteTransaction, useTransactions } from '@/hooks/useFinance';
+import { Receipt, Users } from 'lucide-react';
+import { useState } from 'react';
+import { SplitBillForm } from '@/components/friends/SplitBillForm';
+import { Button, Card, EmptyState, ErrorState, Modal, Skeleton, cn } from '@/components/ui';
+import { useTransactions } from '@/hooks/useFinance';
 import type { TxFilters } from '@/lib/api';
-import { formatDayLabel, formatMoney } from '@/lib/format';
+import type { ApiError } from '@/lib/api/client';
+import { formatMoney } from '@/lib/format';
 import type { Transaction } from '@/types';
 
-export function TransactionList({
-  filters = {},
-  compact = false,
-}: {
-  filters?: TxFilters;
-  compact?: boolean;
-}) {
-  const { data, isLoading, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useTransactions(filters);
-  const xoa = useDeleteTransaction();
+/** `"2026-08-26T00:15:00Z"` → `"26/08 07:15"` — đủ để đối chiếu, không chiếm chỗ */
+function ngayGio(iso: string): string {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
-  if (isLoading) {
-    return (
-      <div className="space-y-2">
-        {Array.from({ length: 5 }, (_, i) => (
-          <Skeleton key={i} className="h-16" />
-        ))}
-      </div>
-    );
-  }
+/**
+ * Sổ giao dịch dạng BẢNG.
+ *
+ * Dữ liệu đến từ ngân hàng nên mỗi dòng là một sự kiện có sẵn cấu trúc: thời điểm, nội dung
+ * chuyển khoản, số tiền, chiều. Bảng đọc nhanh hơn thẻ vì mắt quét theo cột — nhất là khi
+ * cần dò một con số giữa vài chục dòng.
+ *
+ * **Không có cột danh mục.** Danh mục vẫn tồn tại ở BE nhưng chỉ còn một nhiệm vụ: tách
+ * tiền cho mượn ra khỏi tiền tiêu thật. App tự làm việc đó, không có gì để người dùng chọn.
+ */
+export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
+  const {
+    data, isLoading, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage,
+  } = useTransactions(filters);
 
-  // Phải kiểm tra LỖI trước khi kiểm tra rỗng — nếu không, request hỏng sẽ hiển thị
-  // "chưa có giao dịch nào" và user tưởng mất dữ liệu
+  const [chiaBill, setChiaBill] = useState<Transaction | null>(null);
+
+  if (isLoading) return <Skeleton className="h-64" />;
+
   if (isError) {
+    // Lỗi mà hiện "chưa có giao dịch nào" là user tưởng mất sạch dữ liệu
     return (
       <Card>
-        <ErrorState message={(error as Error)?.message} onRetry={() => void refetch()} />
+        <ErrorState message={(error as ApiError).message} onRetry={() => void refetch()} />
       </Card>
     );
   }
 
   const items = data?.pages.flatMap((p) => p.items) ?? [];
 
-  if (!items.length) {
+  if (items.length === 0) {
     return (
-      <Card>
-        <EmptyState
-          icon={Receipt}
-          title="Chưa có giao dịch nào"
-          description="Ghi khoản đầu tiên để bắt đầu theo dõi chi tiêu"
-        />
-      </Card>
+      <EmptyState
+        icon={Receipt}
+        title="Chưa có giao dịch nào"
+        description={'Bấm "Đồng bộ" ở trên để kéo giao dịch từ ngân hàng về.'}
+      />
     );
   }
 
-  // Gom theo ngày — danh sách phẳng hàng trăm dòng rất khó đọc
-  const theoNgay = new Map<string, Transaction[]>();
-  for (const t of items) {
-    const key = t.date.slice(0, 10);
-    theoNgay.set(key, [...(theoNgay.get(key) ?? []), t]);
-  }
-
   return (
-    <div className="space-y-4">
-      {[...theoNgay.entries()].map(([ngay, ds]) => {
-        const tongChi = ds
-          .filter((t) => t.type === 'expense')
-          .reduce((s, t) => s + t.amount, 0);
+    <>
+      <Card className="!p-0">
+        {/* Bảng rộng hơn màn hình thì CUỘN TRONG KHUNG, không đẩy cả trang trôi ngang */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="muted border-b text-left text-xs">
+                <th className="px-3 py-2 font-medium whitespace-nowrap">Thời điểm</th>
+                <th className="px-3 py-2 font-medium">Nội dung chuyển khoản</th>
+                <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Số tiền</th>
+                <th className="w-10 px-3 py-2" />
+              </tr>
+            </thead>
 
-        return (
-          <div key={ngay}>
-            <div className="mb-1.5 flex items-baseline justify-between px-1">
-              <h3 className="text-sm font-medium">{formatDayLabel(ngay)}</h3>
-              {tongChi > 0 && (
-                <span className="muted tabular text-xs">−{formatMoney(tongChi)}</span>
-              )}
-            </div>
+            <tbody className="divide-y">
+              {items.map((t) => (
+                <tr key={t.id} className="group">
+                  <td className="muted tabular px-3 py-2.5 whitespace-nowrap">
+                    {ngayGio(t.date)}
+                  </td>
 
-            <Card className="divide-y p-0">
-              {ds.map((t) => (
-                <div key={t.id} className="group flex items-center gap-3 p-3">
-                  <CategoryIcon icon={t.category?.icon} color={t.category?.color} />
+                  {/* `max-w-0` + `truncate`: nội dung dài không đẩy cột số tiền ra ngoài */}
+                  <td className="max-w-0 px-3 py-2.5">
+                    <span className="block truncate" title={t.note ?? undefined}>
+                      {t.note || '—'}
+                    </span>
+                  </td>
 
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {t.category?.name ?? 'Không danh mục'}
-                    </p>
-                    {t.note && <p className="muted truncate text-xs">{t.note}</p>}
-                  </div>
-
-                  <span
-                    className={`tabular shrink-0 font-semibold ${
-                      t.type === 'income' ? 'text-income' : 'text-expense'
-                    }`}
+                  <td
+                    className={cn(
+                      'tabular px-3 py-2.5 text-right font-semibold whitespace-nowrap',
+                      t.type === 'income' ? 'text-income' : 'text-expense',
+                    )}
                   >
                     {t.type === 'income' ? '+' : '−'}
                     {formatMoney(t.amount)}
-                  </span>
+                  </td>
 
-                  {!compact && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      // Chỉ hiện khi hover/focus để danh sách không rối vì nút xóa
-                      className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-                      onClick={() => {
-                        if (confirm('Xóa giao dịch này?')) xoa.mutate(t.id);
-                      }}
-                      aria-label="Xóa giao dịch"
-                    >
-                      <Trash2 size={15} className="text-expense" />
-                    </Button>
-                  )}
-                </div>
+                  <td className="px-1 py-1">
+                    {/* Chỉ khoản CHI mới chia được — tiền về thì không có gì để đòi ai */}
+                    {t.type === 'expense' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+                        onClick={() => setChiaBill(t)}
+                        aria-label="Chia cho bạn bè"
+                        title="Chia cho bạn bè"
+                      >
+                        <Users size={15} className="text-brand" />
+                      </Button>
+                    )}
+                  </td>
+                </tr>
               ))}
-            </Card>
-          </div>
-        );
-      })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
-      {hasNextPage && !compact && (
+      {hasNextPage && (
         <Button
           variant="secondary"
-          className="w-full"
+          className="mt-3 w-full"
           loading={isFetchingNextPage}
           onClick={() => void fetchNextPage()}
         >
           Xem thêm
         </Button>
       )}
-    </div>
+
+      <Modal open={!!chiaBill} onClose={() => setChiaBill(null)} title="Chia cho bạn bè">
+        {chiaBill && <SplitBillForm transaction={chiaBill} onDone={() => setChiaBill(null)} />}
+      </Modal>
+    </>
   );
 }

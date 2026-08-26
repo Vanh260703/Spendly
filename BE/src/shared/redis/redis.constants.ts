@@ -25,10 +25,8 @@ export const RedisKeys = {
     `ratelimit:ai:${userId}:${yyyymmdd}`,
 
   /** Whitelist refresh token — có mặt = còn hiệu lực, xóa = đã logout */
-  refreshToken: (userId: string, jti: string) => `refresh:${userId}:${jti}`,
 
   /** Tiền tố để thu hồi TẤT CẢ refresh token của user (khi đổi mật khẩu) */
-  refreshTokenPrefix: (userId: string) => `refresh:${userId}:`,
 } as const;
 
 /** TTL mặc định, tính bằng giây */

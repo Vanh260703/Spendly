@@ -9,8 +9,8 @@ import {
   shiftRange,
 } from '../../common/utils/period';
 import { RedisKeys, RedisService, RedisTtl } from '../../shared/redis';
+import { SYSTEM_CATEGORY } from '../categories/default-categories';
 import { FriendsService } from '../friends/friends.service';
-import { Goal, GoalStatus } from '../goals/entities/goal.entity';
 import { Transaction, TxType } from '../transactions/entities/transaction.entity';
 import { TransactionsService } from '../transactions/transactions.service';
 import { User } from '../users/entities/user.entity';
@@ -23,8 +23,6 @@ export class StatsService {
     private readonly txRepo: Repository<Transaction>,
     @InjectRepository(User)
     private readonly users: Repository<User>,
-    @InjectRepository(Goal)
-    private readonly goals: Repository<Goal>,
     private readonly transactions: TransactionsService,
     private readonly friends: FriendsService,
     private readonly redis: RedisService,
@@ -33,42 +31,29 @@ export class StatsService {
   // ————————————————————— Số dư —————————————————————
 
   /**
-   * Các con số của dashboard, và ý nghĩa KHÁC NHAU của từng cái:
+   * Ba con số của màn hình chính.
    *
-   * | | Tiền có trong ví? | Tiêu được không? |
-   * |---|---|---|
-   * | `currentBalance` | có — đây là tiền thật | — |
-   * | `committedToGoals` | có, nhưng đã gắn nhãn mục tiêu (SPEC §4.5) | không nên |
-   * | `owedByMe` | có, nhưng đã có chủ — bạn đang nợ người ta | không |
-   * | `owedToMe` | **KHÔNG** — người khác đang giữ, sẽ về | chưa |
-   * | `freeToSpend` | `currentBalance − committedToGoals − owedByMe` | có |
+   * | | Tiền có trong tài khoản? |
+   * |---|---|
+   * | `currentBalance` | có — số dư ngân hàng báo về |
+   * | `owedByMe` | có, nhưng đã có chủ: bạn đang nợ người ta |
+   * | `owedToMe` | **KHÔNG** — người khác đang giữ, sẽ về |
+   * | `freeToSpend` | `currentBalance − owedByMe` |
    *
-   * ⚠️ `owedToMe` KHÔNG cộng vào `freeToSpend`: tiền đó chưa về, tiêu trước là tiêu khống.
-   * Và nó cũng không phải bước đầu của theo dõi tài sản ròng (SPEC §7 đã loại `Asset`) — nó
-   * là hệ quả của những khoản chi đã ghi, không phải một bảng cân đối tài sản.
+   * ⚠️ `owedToMe` KHÔNG cộng vào `freeToSpend`: tiền đó chưa về tài khoản, tiêu trước là
+   * tiêu khống.
    */
   async getBalance(userId: string) {
-    const [balance, row, congNo] = await Promise.all([
+    const [balance, congNo] = await Promise.all([
       this.transactions.getBalance(userId),
-      this.goals
-        .createQueryBuilder('g')
-        .select('COALESCE(SUM(g.currentAmount), 0)', 'total')
-        .where('g.userId = :userId AND g.status = :status', {
-          userId,
-          status: GoalStatus.ACTIVE,
-        })
-        .getRawOne<{ total: string }>(),
       this.friends.tongCongNo(userId),
     ]);
 
-    const committedToGoals = Number(row?.total ?? 0);
-
     return {
       ...balance,
-      committedToGoals,
       owedToMe: congNo.owedToMe,
       owedByMe: congNo.owedByMe,
-      freeToSpend: balance.currentBalance - committedToGoals - congNo.owedByMe,
+      freeToSpend: balance.currentBalance - congNo.owedByMe,
     };
   }
 
@@ -89,9 +74,7 @@ export class StatsService {
           ),
         ]);
 
-        const byKind = await this.tongTheoKind(userId, range);
         const tongChi = hienTai.expense;
-        const tyLe = (v: number) => (tongChi > 0 ? Number((v / tongChi).toFixed(4)) : 0);
 
         const tbBaKy = ba.reduce((s, k) => s + k.expense, 0) / 3;
 
@@ -101,13 +84,6 @@ export class StatsService {
           income: hienTai.income,
           expense: hienTai.expense,
           net: hienTai.income - hienTai.expense,
-          byKind,
-          // Tỉ trọng need/want/saving để đối chiếu khung 50/30/20
-          kindRatio: {
-            need: tyLe(byKind.need),
-            want: tyLe(byKind.want),
-            saving: tyLe(byKind.saving),
-          },
           comparison: {
             previousPeriodExpense: kyTruoc.expense,
             changePercent:
@@ -121,14 +97,13 @@ export class StatsService {
     );
   }
 
-  // ————————————————————— Theo danh mục (đầu vào chính của AI) —————————————————————
+  // ————————————————————— Theo danh mục —————————————————————
 
   /**
    * Thống kê theo danh mục — trả **cả tần suất**, không chỉ tổng tiền.
    *
-   * Đây là dữ liệu giúp AI phân biệt "1 lần 500k" với "10 lần 50k": hai vấn đề khác nhau
-   * và cách cắt cũng khác (giảm mức chi mỗi lần vs giảm số lần). Thiếu `count` thì AI chỉ
-   * nói được chung chung. Xem SPEC §4.7.
+   * `count` giúp phân biệt "1 lần 500k" với "10 lần 50k" — hai chuyện khác hẳn nhau và
+   * cách xử lý cũng khác (giảm mức mỗi lần vs giảm số lần).
    */
   async getByCategory(userId: string, query: RangeQuery & { type: TxType }) {
     const { range, kind } = await this.giaiMaKhoang(userId, query);
@@ -137,12 +112,11 @@ export class StatsService {
       RedisKeys.stats(userId, `by-category:${query.type}`, rangeKey(range)),
       RedisTtl.STATS,
       async () => {
-        const rows = await this.baseQuery(userId, range)
+        const rows = await this.baseQuery(userId, range, true)
           .select('c.id', 'id')
           .addSelect('c.name', 'name')
           .addSelect('c.icon', 'icon')
           .addSelect('c.color', 'color')
-          .addSelect('c.kind', 'kind')
           .addSelect('SUM(t.amount)', 'total')
           .addSelect('COUNT(*)', 'count')
           .addSelect('AVG(t.amount)', 'average')
@@ -151,7 +125,6 @@ export class StatsService {
           .addGroupBy('c.name')
           .addGroupBy('c.icon')
           .addGroupBy('c.color')
-          .addGroupBy('c.kind')
           .orderBy('SUM(t.amount)', 'DESC')
           .getRawMany<Record<string, string>>();
 
@@ -172,7 +145,6 @@ export class StatsService {
               name: r.name,
               icon: r.icon,
               color: r.color,
-              kind: r.kind,
             },
             total,
             count: Number(r.count),
@@ -278,14 +250,24 @@ export class StatsService {
   // ————————————————————— Nội bộ —————————————————————
 
   /**
-   * Query nền cho MỌI thống kê.
+   * Query nền cho mọi thống kê.
    *
-   * ⚠️ **Luôn loại danh mục `isSystem`** (giao dịch bù của "Điều chỉnh số dư"). Quên lọc là
-   * một lần điều chỉnh 2tr sẽ bị tính thành khoản chi thật, và AI sẽ khuyên bạn "cắt giảm"
-   * một thứ không hề tồn tại.
+   * ⚠️ **Hai danh mục hệ thống phải bị đối xử KHÁC NHAU** — gộp chung là sai một trong hai:
+   *
+   * | Danh mục | Vào TỔNG chi? | Vào biểu đồ theo danh mục? |
+   * |---|---|---|
+   * | `Trả hộ bạn bè` | ❌ không — tiền cho mượn, sẽ về | ❌ |
+   * | `Chưa phân loại` | ✅ **CÓ** — tiền đã đi thật | ❌ lát bánh vô nghĩa |
+   *
+   * Lọc `isSystem = false` cho cả hai (như phiên bản trước) làm khoản chưa phân loại **biến
+   * mất khỏi tổng chi**. Với dữ liệu từ ngân hàng thì mọi giao dịch đều BẮT ĐẦU ở trạng thái
+   * chưa phân loại, nên tổng chi sẽ gần bằng 0 cho tới khi gán hết nhãn — con số sai mà
+   * trông vẫn hợp lý.
+   *
+   * @param boQuaChuaPhanLoai bật khi vẽ biểu đồ theo danh mục
    */
-  private baseQuery(userId: string, range: DateRange) {
-    return this.txRepo
+  private baseQuery(userId: string, range: DateRange, boQuaChuaPhanLoai = false) {
+    const qb = this.txRepo
       .createQueryBuilder('t')
       .innerJoin('t.category', 'c')
       .where('t.userId = :userId', { userId })
@@ -293,7 +275,15 @@ export class StatsService {
         start: range.start,
         end: range.end,
       })
-      .andWhere('c.isSystem = false');
+      // Tiền cho mượn không phải tiền tiêu — không bao giờ tính, ở bất kỳ thống kê nào
+      .andWhere('c.name != :traHo', { traHo: SYSTEM_CATEGORY.TRA_HO_BAN_BE });
+
+    if (boQuaChuaPhanLoai) {
+      qb.andWhere('c.name != :chuaPhanLoai', {
+        chuaPhanLoai: SYSTEM_CATEGORY.CHUA_PHAN_LOAI,
+      });
+    }
+    return qb;
   }
 
   /**
@@ -311,18 +301,6 @@ export class StatsService {
     return { income: lay(TxType.INCOME), expense: lay(TxType.EXPENSE) };
   }
 
-  /** Chi tiêu chia theo need / want / saving — đầu vào cho khung 50/30/20 */
-  private async tongTheoKind(userId: string, range: DateRange) {
-    const rows = await this.baseQuery(userId, range)
-      .select('c.kind', 'kind')
-      .addSelect('SUM(t.amount)', 'total')
-      .andWhere('t.type = :type', { type: TxType.EXPENSE })
-      .groupBy('c.kind')
-      .getRawMany<{ kind: string; total: string }>();
-
-    const lay = (k: string) => Number(rows.find((r) => r.kind === k)?.total ?? 0);
-    return { need: lay('need'), want: lay('want'), saving: lay('saving') };
-  }
 
   /** Trung bình `soKy` kỳ TRƯỚC kỳ hiện tại, theo từng danh mục */
   private async tongTheoDanhMucNhieuKy(

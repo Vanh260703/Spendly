@@ -16,7 +16,7 @@ const PG = {
 } as const;
 
 /**
- * Chuẩn hóa MỌI lỗi thành `{ success: false, message, statusCode }` (xem `API_ENDPOINTS.md`).
+ * Chuẩn hóa MỌI lỗi thành `{ success: false, message, statusCode }`.
  *
  * Hai nguyên tắc:
  * 1. **Không rò rỉ chi tiết nội bộ.** Lỗi 500 chỉ trả thông báo chung; stack trace vào log.

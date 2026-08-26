@@ -1,16 +1,13 @@
 import { INestApplication } from '@nestjs/common';
-import cookieParser from 'cookie-parser';
 
 /**
  * Cấu hình app dùng chung cho `main.ts` **và** test e2e.
  *
- * Tách ra để test chạy trên đúng cấu hình như production. Nếu test tự dựng app theo cách
- * riêng, nó sẽ không phát hiện được lỗi ở chính lớp cấu hình — VD quên `cookieParser()`
- * thì auth refresh gãy ngoài đời nhưng test vẫn xanh.
+ * Tách ra để test chạy trên đúng cấu hình như production — test tự dựng app theo cách
+ * riêng sẽ không phát hiện được lỗi nằm ở chính lớp cấu hình.
  */
 export function configureApp(app: INestApplication): INestApplication {
   app.setGlobalPrefix('api/v1');
-  app.use(cookieParser());
 
   /**
    * CORS nhận DANH SÁCH origin, phân tách bằng dấu phẩy — FE deploy trên Cloudflare Pages
@@ -26,7 +23,7 @@ export function configureApp(app: INestApplication): INestApplication {
 
   app.enableCors({
     origin: origins,
-    credentials: true, // cần cho refresh token trong httpOnly cookie
+    credentials: true,
   });
 
   return app;

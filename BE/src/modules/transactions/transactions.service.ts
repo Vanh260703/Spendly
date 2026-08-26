@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { TZDate } from '@date-fns/tz';
 import { Repository } from 'typeorm';
 import { RedisKeys, RedisService } from '../../shared/redis';
 import { SYSTEM_CATEGORY } from '../categories/default-categories';
@@ -11,7 +12,7 @@ import {
   Category,
   CategoryType,
 } from '../categories/entities/category.entity';
-import { Wallet } from '../wallets/entities/wallet.entity';
+import { BankAccount } from '../bank-accounts/entities/bank-account.entity';
 import {
   AdjustBalanceDto,
   CreateTransactionDto,
@@ -23,11 +24,12 @@ import {
 import { Transaction, TxType } from './entities/transaction.entity';
 
 export interface BalanceSummary {
+  /** Tổng số dư mọi tài khoản ngân hàng đã liên kết — do ngân hàng cấp */
   currentBalance: number;
-  initialBalance: number;
   totalIncome: number;
   totalExpense: number;
-  since: Date | null;
+  /** Lần cuối nhận webhook — im lặng quá lâu là dấu hiệu liên kết SePay hỏng */
+  lastSyncedAt: Date | null;
 }
 
 @Injectable()
@@ -37,8 +39,8 @@ export class TransactionsService {
     private readonly repo: Repository<Transaction>,
     @InjectRepository(Category)
     private readonly categories: Repository<Category>,
-    @InjectRepository(Wallet)
-    private readonly wallets: Repository<Wallet>,
+    @InjectRepository(BankAccount)
+    private readonly bankAccounts: Repository<BankAccount>,
     private readonly redis: RedisService,
   ) {}
 
@@ -59,8 +61,9 @@ export class TransactionsService {
       .innerJoinAndSelect('t.category', 'c')
       .where('t.userId = :userId', { userId });
 
-    if (query.from) qb.andWhere('t.date >= :from', { from: query.from });
-    if (query.to) qb.andWhere('t.date <= :to', { to: query.to });
+    // Nới `yyyy-mm-dd` thành trọn ngày theo múi giờ người dùng — xem `bienNgay()`
+    if (query.from) qb.andWhere('t.date >= :from', { from: this.bienNgay(query.from, 'dau') });
+    if (query.to) qb.andWhere('t.date <= :to', { to: this.bienNgay(query.to, 'cuoi') });
     if (query.type) qb.andWhere('t.type = :type', { type: query.type });
     if (query.categoryId)
       qb.andWhere('t.categoryId = :categoryId', { categoryId: query.categoryId });
@@ -109,54 +112,48 @@ export class TransactionsService {
   }
 
   /**
-   * Số tiền hiện có = `wallet.initialBalance + Σthu − Σchi`.
+   * Số dư = **con số NGÂN HÀNG báo về**, không phải app tự cộng trừ.
    *
-   * **Luôn tính ra bằng `SUM()`, không lưu thành cột** (SPEC §7) — denormalize là nguồn gốc
-   * của số dư lệch khỏi lịch sử.
+   * Mỗi webhook SePay mang theo `accumulated` — số dư thật sau giao dịch — và nó được chép
+   * thẳng vào `BankAccount.currentBalance`. App không tự tính lại.
    *
-   * ⚠️ `transformer: money` KHÔNG áp dụng cho raw query, nên `SUM()` trả về **chuỗi**
-   * và bắt buộc phải `Number()` thủ công. Cộng thẳng sẽ ra nối chuỗi.
+   * ⚠️ Đây KHÔNG mâu thuẫn với quy tắc "không lưu cột balance" (SPEC §7). Quy tắc đó chặn
+   * việc app tự cộng dồn rồi lệch khỏi lịch sử của chính nó. Ở đây con số do ngân hàng cấp;
+   * tự cộng trừ mới là cách sai, vì ta không bao giờ thấy hết mọi biến động (phí, lãi,
+   * giao dịch phát sinh trước khi liên kết).
+   *
+   * `totalIncome`/`totalExpense` vẫn tính bằng `SUM()` vì chúng là tổng của KỲ, không phải
+   * số dư. ⚠️ `transformer: money` không áp dụng cho raw query — `SUM()` trả về **chuỗi**,
+   * bắt buộc `Number()` thủ công.
    */
   async getBalance(userId: string): Promise<BalanceSummary> {
-    const wallet = await this.wallets.findOneBy({ userId });
-    if (!wallet) throw new NotFoundException('Không tìm thấy ví');
+    const [accounts, rows] = await Promise.all([
+      this.bankAccounts.find({ where: { userId } }),
+      this.repo
+        .createQueryBuilder('t')
+        .select('t.type', 'type')
+        .addSelect('SUM(t.amount)', 'total')
+        .where('t.userId = :userId', { userId })
+        .groupBy('t.type')
+        .getRawMany<{ type: TxType; total: string }>(),
+    ]);
 
-    const rows = await this.repo
-      .createQueryBuilder('t')
-      .select('t.type', 'type')
-      .addSelect('SUM(t.amount)', 'total')
-      .where('t.userId = :userId', { userId })
-      .groupBy('t.type')
-      .getRawMany<{ type: TxType; total: string }>();
-
-    const tong = (type: TxType) =>
-      Number(rows.find((r) => r.type === type)?.total ?? 0);
-
-    const totalIncome = tong(TxType.INCOME);
-    const totalExpense = tong(TxType.EXPENSE);
+    const tong = (type: TxType) => Number(rows.find((r) => r.type === type)?.total ?? 0);
 
     return {
-      currentBalance: wallet.initialBalance + totalIncome - totalExpense,
-      initialBalance: wallet.initialBalance,
-      totalIncome,
-      totalExpense,
-      since: wallet.startedAt ?? null,
+      currentBalance: accounts.reduce((t, a) => t + a.currentBalance, 0),
+      totalIncome: tong(TxType.INCOME),
+      totalExpense: tong(TxType.EXPENSE),
+      lastSyncedAt:
+        accounts
+          .map((a) => a.lastSyncedAt)
+          .filter((d): d is Date => !!d)
+          .sort((a, b) => b.getTime() - a.getTime())[0] ?? null,
     };
   }
 
   // ————————————————————— Ghi —————————————————————
 
-  async create(userId: string, dto: CreateTransactionDto): Promise<Transaction> {
-    const category = await this.layDanhMucHopLe(userId, dto.categoryId, dto.type);
-    const walletId = await this.layViId(userId);
-
-    const tx = await this.repo.save(
-      this.repo.create({ ...dto, userId, walletId, note: dto.note ?? null }),
-    );
-
-    await this.xoaCacheThongKe(userId);
-    return { ...tx, category } as Transaction;
-  }
 
   async update(
     userId: string,
@@ -192,59 +189,6 @@ export class TransactionsService {
    * Giao dịch bù dùng danh mục `isSystem` và **bị loại khỏi mọi thống kê + prompt AI** —
    * nếu không, AI sẽ hiểu nhầm thành khoản chi thật và đưa lời khuyên sai.
    */
-  async adjustBalance(userId: string, dto: AdjustBalanceDto) {
-    const { currentBalance } = await this.getBalance(userId);
-    const difference = dto.actualBalance - currentBalance;
-
-    if (difference === 0) {
-      return { calculatedBalance: currentBalance, actualBalance: dto.actualBalance, difference: 0, transaction: null };
-    }
-
-    // Chênh dương = app tính THIẾU (có khoản thu quên nhập) → bù bằng giao dịch thu
-    const type = difference > 0 ? TxType.INCOME : TxType.EXPENSE;
-
-    /*
-     * ⚠️ Phải lọc theo CẢ TÊN, không chỉ `isSystem: true`.
-     *
-     * Từ khi có tính năng công nợ bạn bè, mỗi chiều tiền có HAI danh mục hệ thống
-     * ("Điều chỉnh số dư" và "Trả hộ bạn bè"). Chỉ lọc `isSystem` thì `findOneBy` trả về
-     * cái nào tùy thứ tự DB — bút toán bù số dư có thể rơi vào "Trả hộ bạn bè" và làm hỏng
-     * số liệu công nợ.
-     */
-    const category = await this.categories.findOneBy({
-      userId,
-      isSystem: true,
-      name: SYSTEM_CATEGORY.DIEU_CHINH_SO_DU,
-      type: this.sangCategoryType(type),
-    });
-    if (!category) {
-      throw new NotFoundException(
-        `Không tìm thấy danh mục hệ thống "${SYSTEM_CATEGORY.DIEU_CHINH_SO_DU}"`,
-      );
-    }
-
-    const tx = await this.repo.save(
-      this.repo.create({
-        userId,
-        walletId: await this.layViId(userId),
-        categoryId: category.id,
-        type,
-        amount: Math.abs(difference),
-        date: new Date(),
-        note: dto.note ?? 'Điều chỉnh số dư',
-        tags: [],
-      }),
-    );
-
-    await this.xoaCacheThongKe(userId);
-
-    return {
-      calculatedBalance: currentBalance,
-      actualBalance: dto.actualBalance,
-      difference,
-      transaction: { ...tx, category } as Transaction,
-    };
-  }
 
   // ————————————————————— Nội bộ —————————————————————
 
@@ -281,10 +225,23 @@ export class TransactionsService {
     return type === TxType.INCOME ? CategoryType.INCOME : CategoryType.EXPENSE;
   }
 
-  private async layViId(userId: string): Promise<string> {
-    const wallet = await this.wallets.findOneBy({ userId });
-    if (!wallet) throw new NotFoundException('Không tìm thấy ví');
-    return wallet.id;
+
+  /**
+   * `"2026-08-26"` → mốc đầu hoặc cuối ngày đó **theo múi giờ người dùng**.
+   *
+   * ⚠️ Đây là chỗ hai lỗi kinh điển gặp nhau:
+   *
+   * - **Quên cuối ngày**: `to = 2026-08-26T00:00Z` loại bỏ mọi giao dịch trong chính ngày
+   *   26 vì tất cả đều muộn hơn 00:00. Bộ lọc "hôm nay" luôn trả về rỗng.
+   * - **Quên múi giờ**: nửa đêm ở VN là 17:00 hôm trước theo UTC. Lấy biên theo UTC thì
+   *   giao dịch lúc 2h sáng bị xếp sang ngày hôm trước.
+   */
+  private bienNgay(ngay: string, phia: 'dau' | 'cuoi'): Date {
+    const tz = process.env.TIMEZONE ?? 'Asia/Ho_Chi_Minh';
+    const [y, m, d] = ngay.split('-').map(Number);
+    return phia === 'dau'
+      ? new Date(new TZDate(y, m - 1, d, 0, 0, 0, 0, tz).getTime())
+      : new Date(new TZDate(y, m - 1, d, 23, 59, 59, 999, tz).getTime());
   }
 
   /** Mọi thay đổi giao dịch đều làm sai số liệu đã cache — phải xóa ngay */

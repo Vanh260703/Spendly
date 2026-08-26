@@ -25,7 +25,7 @@ describe('Danh bạ & công nợ bạn bè (e2e)', () => {
   });
 
   beforeEach(async () => {
-    user = await registerOnboardedUser(server, 10_000_000);
+    user = await registerOnboardedUser(server);
   });
 
   // ————————————————————— Tiện ích —————————————————————

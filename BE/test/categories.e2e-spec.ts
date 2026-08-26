@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { TestUser, registerUser } from './utils/auth-helper';
+import { TestUser, registerOnboardedUser, registerUser } from './utils/auth-helper';
 import { createTestApp, truncateAll } from './utils/test-app';
 
 const API = '/api/v1';
@@ -9,7 +9,6 @@ const API = '/api/v1';
 const catMoi = (over: Record<string, unknown> = {}) => ({
   name: 'Trà sữa',
   type: 'expense',
-  kind: 'want',
   icon: 'cup-soda',
   color: '#f472b6',
   ...over,
@@ -26,7 +25,7 @@ describe('Categories (e2e)', () => {
   });
 
   beforeEach(async () => {
-    user = await registerUser(server);
+    user = await registerOnboardedUser(server);
   });
 
   afterAll(async () => {
@@ -52,7 +51,7 @@ describe('Categories (e2e)', () => {
 
       expect(res.body.data).toHaveLength(18);
       // Bút toán kỹ thuật, không phải danh mục để user chọn — cả hai đều phải bị ẩn
-      expect(JSON.stringify(res.body)).not.toContain('Điều chỉnh số dư');
+      expect(JSON.stringify(res.body)).not.toContain('Chưa phân loại');
       expect(JSON.stringify(res.body)).not.toContain('Trả hộ bạn bè');
       expect(JSON.stringify(res.body)).not.toContain('isSystem');
     });
@@ -69,21 +68,12 @@ describe('Categories (e2e)', () => {
       );
     });
 
-    it('lọc theo kind=want (vùng AI được phép đề xuất cắt giảm)', async () => {
-      const res = await request(server as never)
-        .get(`${API}/categories?kind=want`)
-        .set(user.auth)
-        .expect(200);
-
-      expect(res.body.data.length).toBeGreaterThan(0);
-      expect(res.body.data.every((c: { kind: string }) => c.kind === 'want')).toBe(true);
-    });
   });
 
   describe('POST /categories', () => {
     it('tạo được danh mục mới', async () => {
       const cat = await taoCat();
-      expect(cat).toMatchObject({ name: 'Trà sữa', type: 'expense', kind: 'want' });
+      expect(cat).toMatchObject({ name: 'Trà sữa', type: 'expense' });
     });
 
     it('KHÔNG cho client tự set isDefault / isSystem / userId', async () => {
@@ -198,15 +188,15 @@ describe('Categories (e2e)', () => {
   describe('DELETE /categories/:id', () => {
     it('XÓA DANH MỤC KHÔNG XÓA GIAO DỊCH — chuyển hết về "Khác"', async () => {
       const cat = await taoCat();
-      const [wallet] = await dataSource.query(
-        'SELECT id FROM wallets WHERE "userId" = $1',
+      const [account] = await dataSource.query(
+        'SELECT id FROM bank_accounts WHERE "userId" = $1',
         [user.id],
       );
 
       await dataSource.query(
-        `INSERT INTO transactions ("userId","walletId","categoryId",type,amount,date,tags)
+        `INSERT INTO transactions ("userId","bankAccountId","categoryId",type,amount,date,tags)
          VALUES ($1,$2,$3,'expense',45000,now(),'{}'), ($1,$2,$3,'expense',50000,now(),'{}')`,
-        [user.id, wallet.id, cat.id],
+        [user.id, account.id, cat.id],
       );
 
       const res = await request(server as never)
@@ -248,25 +238,6 @@ describe('Categories (e2e)', () => {
       expect(row.parentId).toBeNull();
     });
 
-    it('xóa danh mục → ngân sách gắn kèm bị xóa theo (cascade)', async () => {
-      const cat = await taoCat();
-      await dataSource.query(
-        `INSERT INTO budgets ("userId","categoryId",period,amount,"startDate")
-         VALUES ($1,$2,'monthly',3000000,now())`,
-        [user.id, cat.id],
-      );
-
-      await request(server as never)
-        .delete(`${API}/categories/${cat.id}`)
-        .set(user.auth)
-        .expect(200);
-
-      const [{ count }] = await dataSource.query(
-        'SELECT count(*)::int FROM budgets WHERE "categoryId" = $1',
-        [cat.id],
-      );
-      expect(count).toBe(0);
-    });
 
     it('không cho xóa danh mục "Khác" (nơi hứng giao dịch) → 409', async () => {
       const [khac] = await dataSource.query(

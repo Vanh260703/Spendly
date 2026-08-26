@@ -13,7 +13,7 @@ export interface ApiResponse<T> {
 
 /**
  * Bọc mọi response thành `{ success: true, data }` để FE chỉ phải xử lý một hình dạng
- * duy nhất (xem `API_ENDPOINTS.md`). Controller cứ trả dữ liệu thô, interceptor lo phần vỏ.
+ * duy nhất. Controller cứ trả dữ liệu thô, interceptor lo phần vỏ.
  *
  * Bỏ qua response rỗng (204 No Content) — bọc `null` vào envelope là vô nghĩa.
  */

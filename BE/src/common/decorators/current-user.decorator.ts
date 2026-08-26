@@ -1,17 +1,16 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
-/** Thông tin user lấy từ JWT, do `JwtStrategy.validate()` gắn vào request. */
+/** Người dùng của request, do `SingleUserGuard` gắn vào. */
 export interface AuthUser {
   id: string;
-  email: string;
 }
 
 /**
- * Lấy user hiện tại từ token: `@CurrentUser() user: AuthUser`.
+ * Lấy user hiện tại: `@CurrentUser() user: AuthUser`.
  *
- * ⚠️ Đây là NGUỒN DUY NHẤT được phép cung cấp `userId` cho mọi truy vấn.
- * **Không bao giờ** nhận `userId` từ body/query/param của client — làm vậy là để lộ
- * dữ liệu tài chính của người khác chỉ bằng cách đổi một tham số trên URL.
+ * ⚠️ Vẫn là NGUỒN DUY NHẤT được phép cung cấp `userId` cho truy vấn. Không nhận `userId`
+ * từ body/query/param — dù giờ chỉ có một người dùng, giữ nguyên tắc này thì ngày thêm auth
+ * trở lại không phải rà lại từng query.
  */
 export const CurrentUser = createParamDecorator(
   (data: keyof AuthUser | undefined, ctx: ExecutionContext) => {

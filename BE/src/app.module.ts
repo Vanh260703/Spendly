@@ -1,24 +1,21 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { validateEnv } from './config/env';
 import { dataSourceOptions } from './database/data-source';
-import { AiModule } from './modules/ai/ai.module';
-import { AuthModule } from './modules/auth/auth.module';
-import { BudgetsModule } from './modules/budgets/budgets.module';
-import { DebtsModule } from './modules/debts/debts.module';
 import { ExportModule } from './modules/export/export.module';
 import { FriendsModule } from './modules/friends/friends.module';
-import { GoalsModule } from './modules/goals/goals.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { SepayModule } from './modules/sepay/sepay.module';
 import { StatsModule } from './modules/stats/stats.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { UsersModule } from './modules/users/users.module';
-import { WalletsModule } from './modules/wallets/wallets.module';
+import { BankAccountsModule } from './modules/bank-accounts/bank-accounts.module';
+import { SingleUserGuard } from './common/guards/single-user.guard';
 import { RedisModule } from './shared/redis';
 
 @Module({
@@ -34,20 +31,18 @@ import { RedisModule } from './shared/redis';
     ScheduleModule.forRoot(),
 
     // Domain modules
-    AuthModule,
     UsersModule,
-    WalletsModule,
+    BankAccountsModule,
     CategoriesModule,
     TransactionsModule,
     StatsModule,
-    BudgetsModule,
-    GoalsModule,
     FriendsModule,
-    DebtsModule,
-    AiModule,
+    SepayModule,
     ExportModule,
   ],
   providers: [
+    // Thay cho JwtAuthGuard: không chặn ai, chỉ gắn user duy nhất vào request
+    { provide: APP_GUARD, useClass: SingleUserGuard },
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Category, CategoryKind, CategoryType } from '../entities/category.entity';
+import { Category, CategoryType } from '../entities/category.entity';
 
 const hexColor = z
   .string()
@@ -8,7 +8,6 @@ const hexColor = z
 export const createCategorySchema = z.object({
   name: z.string().trim().min(1, 'Tên danh mục không được để trống').max(60),
   type: z.nativeEnum(CategoryType),
-  kind: z.nativeEnum(CategoryKind).default(CategoryKind.NEED),
   icon: z.string().trim().min(1, 'Vui lòng chọn icon').max(50),
   color: hexColor,
   parentId: z.string().uuid().nullable().optional(),
@@ -28,7 +27,6 @@ export const updateCategorySchema = createCategorySchema
 
 export const listCategoryQuerySchema = z.object({
   type: z.nativeEnum(CategoryType).optional(),
-  kind: z.nativeEnum(CategoryKind).optional(),
 });
 
 export type CreateCategoryDto = z.infer<typeof createCategorySchema>;
@@ -39,7 +37,6 @@ export interface CategoryDto {
   id: string;
   name: string;
   type: CategoryType;
-  kind: CategoryKind;
   icon: string;
   color: string;
   parentId: string | null;
@@ -52,7 +49,6 @@ export function toCategoryDto(c: Category): CategoryDto {
     id: c.id,
     name: c.name,
     type: c.type,
-    kind: c.kind,
     icon: c.icon,
     color: c.color,
     parentId: c.parentId ?? null,

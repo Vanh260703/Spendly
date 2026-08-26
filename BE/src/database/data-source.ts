@@ -8,7 +8,7 @@ loadEnv();
  * Cấu hình DataSource dùng chung cho cả app (AppModule) và TypeORM CLI (migration).
  *
  * ⚠️ `synchronize: false` ở MỌI môi trường — mọi thay đổi schema phải đi qua migration
- * đã commit. Xem SPEC.md §7.
+ * đã commit — xem `CLAUDE.md`, mục "TypeORM".
  */
 export const dataSourceOptions: DataSourceOptions = {
   type: 'postgres',

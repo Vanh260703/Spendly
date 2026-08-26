@@ -18,7 +18,7 @@ describe('Stats (e2e)', () => {
   });
 
   beforeEach(async () => {
-    user = await registerOnboardedUser(server, 12_000_000, 20_000_000);
+    user = await registerOnboardedUser(server);
     const res = await request(server as never).get(`${API}/categories`).set(user.auth);
     cat = Object.fromEntries(
       res.body.data.map((c: { name: string; id: string }) => [c.name, c.id]),
@@ -291,7 +291,7 @@ describe('Stats (e2e)', () => {
   describe('Cách ly & cache', () => {
     it('chỉ tính dữ liệu của chính mình', async () => {
       await ghi({ amount: 999_000 });
-      const nguoiKhac = await registerOnboardedUser(server, 1_000_000);
+      const nguoiKhac = await registerOnboardedUser(server);
 
       const res = await request(server as never)
         .get(`${API}/stats/summary`)

@@ -1,93 +1,124 @@
 'use client';
 
-import { Download, Plus, Search } from 'lucide-react';
-import { useState } from 'react';
-import { QuickAddForm } from '@/components/transactions/QuickAddForm';
+import { Landmark, RefreshCw, TriangleAlert } from 'lucide-react';
+import { Suspense, useState } from 'react';
+import { TransactionFilters, type BoLoc } from '@/components/transactions/TransactionFilters';
 import { TransactionList } from '@/components/transactions/TransactionList';
-import { Button, Card, Input, Modal, Select } from '@/components/ui';
-import { useCategories } from '@/hooks/useFinance';
-import { API_URL } from '@/lib/api/client';
-import { useAuthStore } from '@/stores/auth-store';
+import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
+import {
+  useBalance, useBankAccounts, useSepayStatus, useSyncSepay,
+} from '@/hooks/useFinance';
+import type { ApiError } from '@/lib/api/client';
+import { formatDate, formatMoney } from '@/lib/format';
 
-export default function TransactionsPage() {
-  const [moForm, setMoForm] = useState(false);
-  const [q, setQ] = useState('');
-  const [type, setType] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const { data: categories } = useCategories(type ? { type } : {});
+/** Bao lâu không đồng bộ được thì coi là đáng ngờ */
+const NGUONG_IM_LANG_GIO = 72;
 
-  /**
-   * Tải file phải tự fetch kèm Bearer token rồi tạo blob — thẻ <a download> thường
-   * không gửi được header Authorization nên sẽ nhận 401.
-   */
-  const taiFile = async () => {
-    const res = await fetch(`${API_URL}/export/excel`, {
-      headers: { Authorization: `Bearer ${useAuthStore.getState().accessToken}` },
-      credentials: 'include',
-    });
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `spendly-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+/**
+ * Dòng tiền — màn hình chính của app.
+ *
+ * Gộp số dư + danh sách giao dịch vào một trang thay vì tách dashboard riêng: app chỉ làm
+ * hai việc, mà một trong hai lại chia thành hai màn hình thì người dùng phải nhớ cái nào ở
+ * đâu mà chẳng được gì thêm.
+ */
+export default function DongTienPage() {
+  const balance = useBalance();
+  const { data: taiKhoan } = useBankAccounts();
+  const { data: sepay } = useSepayStatus();
+  const dongBo = useSyncSepay();
+
+  const [loc, setLoc] = useState<BoLoc>({});
+
+  const b = balance.data;
+  const tk = taiKhoan?.[0];
+  const imLang =
+    tk &&
+    (!tk.lastSyncedAt ||
+      Date.now() - new Date(tk.lastSyncedAt).getTime() > NGUONG_IM_LANG_GIO * 3600_000);
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Giao dịch</h1>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => void taiFile()}>
-            <Download size={18} /> Xuất CSV
-          </Button>
-          <Button onClick={() => setMoForm(true)}>
-            <Plus size={18} /> Ghi khoản
-          </Button>
-        </div>
-      </div>
-
-      <Card className="space-y-3">
-        <div className="relative">
-          <Search size={16} className="muted absolute top-1/2 left-3 -translate-y-1/2" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Tìm trong ghi chú..."
-            className="pl-9"
+      {/* ————— Số dư ————— */}
+      {balance.isError ? (
+        // Hiện "0đ" khi lỗi là tệ nhất trong mọi trạng thái sai — user tưởng hết sạch tiền
+        <Card>
+          <ErrorState
+            message={(balance.error as ApiError).message}
+            onRetry={() => void balance.refetch()}
           />
-        </div>
+        </Card>
+      ) : balance.isLoading ? (
+        <Skeleton className="h-16" />
+      ) : (
+        <Card className="bg-brand !py-3 text-white">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-xs opacity-80">
+                <Landmark size={13} />
+                {tk ? `${tk.bankName} · ${tk.accountNumber}` : 'Chưa liên kết tài khoản'}
+              </div>
+              {/* Số dư là con số quan trọng nhất nhưng không cần chiếm cả màn hình —
+                  bảng bên dưới mới là thứ người ta ngồi đọc lâu */}
+              <p className="tabular text-xl font-bold">{formatMoney(b?.currentBalance ?? 0)}</p>
+            </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <Select
-            value={type}
-            onChange={(e) => {
-              setType(e.target.value);
-              setCategoryId('');
-            }}
-          >
-            <option value="">Tất cả loại</option>
-            <option value="expense">Khoản chi</option>
-            <option value="income">Khoản thu</option>
-          </Select>
+            {/*
+              Nút này là đường DUY NHẤT đưa dữ liệu mới vào app khi cron chưa tới lượt —
+              app tắt vài ngày rồi bật lại thì bấm một cái là đủ. Chưa cấu hình token thì
+              disable kèm lý do, không giấu nút đi: giấu là user không biết tính năng tồn tại.
+            */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="!text-white shrink-0 hover:bg-white/15"
+              disabled={!sepay?.configured}
+              loading={dongBo.isPending}
+              onClick={() => dongBo.mutate({})}
+              title={
+                sepay?.configured
+                  ? 'Kéo giao dịch mới từ SePay'
+                  : 'Chưa cấu hình SEPAY_API_TOKEN trong .env'
+              }
+            >
+              <RefreshCw size={15} /> Đồng bộ
+            </Button>
+          </div>
 
-          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">Tất cả danh mục</option>
-            {categories?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </Card>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] opacity-80">
+            {(b?.owedToMe ?? 0) > 0 && <span>Bạn bè nợ: {formatMoney(b!.owedToMe)}</span>}
+            {(b?.owedByMe ?? 0) > 0 && <span>Bạn nợ: {formatMoney(b!.owedByMe)}</span>}
+            {b?.lastSyncedAt && <span>Đồng bộ {formatDate(b.lastSyncedAt)}</span>}
+          </div>
 
-      <TransactionList filters={{ q: q || undefined, type: type || undefined, categoryId: categoryId || undefined }} />
+          {/*
+            Ngân hàng im lặng quá lâu mà KHÔNG hiện là nguy hiểm nhất: app trông vẫn bình
+            thường, số dư vẫn có, chỉ là đã cũ — user tưởng mình còn ngần ấy tiền.
+          */}
+          {imLang && (
+            <p className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-black/15 px-2 py-1.5 text-[11px]">
+              <TriangleAlert size={13} className="mt-px shrink-0" />
+              <span>
+                {tk!.lastSyncedAt
+                  ? 'Hơn 3 ngày chưa đồng bộ'
+                  : 'Chưa đồng bộ lần nào'}
+                {sepay?.configured
+                  ? ' — bấm "Đồng bộ" để kéo về ngay.'
+                  : ' — chưa cấu hình SEPAY_API_TOKEN trong .env.'}
+              </span>
+            </p>
+          )}
+        </Card>
+      )}
 
-      <Modal open={moForm} onClose={() => setMoForm(false)} title="Ghi khoản thu chi">
-        <QuickAddForm onDone={() => setMoForm(false)} />
-      </Modal>
+      {/*
+        `useSearchParams()` cần bọc Suspense khi build tĩnh — Next prerender trang trước khi
+        biết query string, nên phần đọc query phải chờ tới lúc chạy ở trình duyệt.
+      */}
+      <Suspense fallback={<Skeleton className="h-10" />}>
+        <TransactionFilters onChange={setLoc} />
+      </Suspense>
+
+      <TransactionList filters={{ q: loc.q, from: loc.from, to: loc.to }} />
     </div>
   );
 }

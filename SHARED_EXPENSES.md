@@ -1,8 +1,11 @@
 # Công nợ bạn bè — thiết kế
 
-> Trạng thái: **đã chốt thiết kế, chưa code.**
-> Tính năng: ghi lại những lần trả hộ / được trả hộ khi đi ăn, đi chơi, rồi xem mỗi người
-> đang nợ mình (hoặc mình đang nợ họ) bao nhiêu.
+> Trạng thái: **đã làm xong.** Tài liệu này giữ lại phần *lý do* — những quyết định và bẫy
+> đã trả giá để tìm ra. Quy tắc ngắn gọn để code hằng ngày nằm ở `CLAUDE.md`.
+>
+> ⚠️ **Một chỗ đã đổi so với bản thiết kế gốc:** khi BẠN trả, app **KHÔNG tự tạo giao dịch**
+> nữa mà **TÁCH giao dịch ngân hàng đã có**. Lý do: giao dịch giờ đến từ SePay, tạo thêm là
+> đếm tiền hai lần. Xem §2b bên dưới.
 
 ## 1. Vấn đề
 
@@ -17,13 +20,13 @@ ba con số về ba hướng khác nhau:
 
 Ghi thẳng 1.000.000₫ là chi "Ăn uống" thì số dư đúng nhưng **AI sẽ kết luận bạn tiêu ăn
 uống quá đà và khuyên cắt** — lời khuyên sai sinh ra từ dữ liệu sai. Đây đúng loại lỗi mà
-danh mục `isSystem` đã được tạo ra để chặn (xem SPEC §4.2, "Điều chỉnh số dư").
+danh mục `isSystem` đã được tạo ra để chặn (danh mục `isSystem`).
 
 ## 2. Nguyên tắc nền
 
 > **Chỉ ghi `Transaction` khi tiền THẬT SỰ di chuyển khỏi/vào ví.**
 
-Đây là hệ quả trực tiếp của quyết định đã chốt ở `goals/contribute` (SPEC §4.5): nạp mục
+Đây là hệ quả trực tiếp của quyết định đã chốt ở `goals/contribute` : nạp mục
 tiêu không tạo giao dịch vì tiền chưa rời ví. Áp cùng nguyên tắc ở đây cho ra kết quả bất
 đối xứng nhưng đúng:
 
@@ -40,6 +43,28 @@ chưa trả sẽ làm số dư tính ra thấp hơn tiền thật trong ví.
 ⚠️ **Hệ quả cần chấp nhận:** khi bạn ăn ké ngày 10 và trả lại ngày 20, khoản chi đó nằm ở
 ngày **20** trong thống kê. Lệch ngày so với lúc ăn. Đây là cái giá của việc giữ số dư
 luôn khớp tiền thật — và là lựa chọn đúng, vì số dư sai thì mọi thứ khác sai theo.
+
+## 2b. ⚠️ ĐÃ ĐỔI — tách giao dịch, không tạo mới
+
+Bản thiết kế gốc (§3.1) cho app **tự tạo** các giao dịch khi bạn trả hộ. Đúng ở thời điểm
+đó, vì mọi giao dịch đều nhập tay.
+
+Từ khi dữ liệu đến từ SePay thì sai: ngân hàng **đã** báo khoản chi 1.000.000₫ rồi. Tạo
+thêm là đếm hai lần, số dư app thấp hơn thực tế đúng một hóa đơn.
+
+```
+Giao dịch ngân hàng  1.000.000₫  →  thu nhỏ còn  250.002₫  (phần thực ăn)
+                                   + thêm dòng   250.000₫  (phần mời)
+                                   + thêm dòng   499.998₫  (cho mượn)
+                                               ─────────────
+                                                 1.000.000₫  ← TỔNG KHÔNG ĐỔI
+```
+
+Dòng gốc **giữ nguyên `sepayId`** nên chống trùng vẫn chạy. Xóa chia bill thì **khôi phục**
+dòng gốc chứ không xóa nó.
+
+Mọi thứ khác trong tài liệu này — mô hình tiền hai chiều, công thức công nợ, quy tắc làm
+tròn, các trường hợp biên — vẫn đúng nguyên.
 
 ## 3. Mô hình tiền
 
@@ -253,7 +278,7 @@ Thêm hai con số, song song với `committedToGoals` đã có:
 | `owedByMe` | vẫn trong ví nhưng đã có chủ |
 | `freeToSpend` | `currentBalance − committedToGoals − owedByMe` |
 
-⚠️ `owedToMe` **không** phải bước đầu của theo dõi tài sản ròng (SPEC §7 đã loại bỏ
+⚠️ `owedToMe` **không** phải bước đầu của theo dõi tài sản ròng (`CLAUDE.md` đã loại bỏ
 `Asset`/`NetWorthSnapshot`). Nó là hệ quả của những khoản chi bạn đã ghi, không phải một
 bảng cân đối tài sản. **Đừng** mở rộng nó thành nơi khai báo tài sản.
 

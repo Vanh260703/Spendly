@@ -20,7 +20,7 @@ describe('Transactions (e2e)', () => {
 
   beforeEach(async () => {
     // 12tr số dư ban đầu
-    user = await registerOnboardedUser(server, 12_000_000, 20_000_000);
+    user = await registerOnboardedUser(server);
 
     const cats = await request(server as never)
       .get(`${API}/categories`)

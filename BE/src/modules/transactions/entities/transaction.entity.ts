@@ -1,9 +1,9 @@
-import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
 import { money } from '../../../common/transformers/money.transformer';
 import { Category } from '../../categories/entities/category.entity';
 import { User } from '../../users/entities/user.entity';
-import { Wallet } from '../../wallets/entities/wallet.entity';
+import { BankAccount } from '../../bank-accounts/entities/bank-account.entity';
 
 export enum TxType {
   /** Tiền vào */
@@ -17,9 +17,12 @@ export enum TxType {
  *
  * Mô hình cố ý tối giản: chỉ **một ví chung** (xem `Wallet`), không chia loại ví,
  * không có chuyển tiền nội bộ. Với người dùng, một giao dịch = số tiền + danh mục + ngày;
- * `walletId` do BE tự điền. Càng ít trường phải nhập thì càng dễ giữ thói quen ghi mỗi ngày.
+ * `bankAccountId` do webhook điền — giao dịch đến từ ngân hàng, không ai gõ tay.
  */
 @Entity('transactions')
+// Chống trùng khi SePay gọi lại cùng một giao dịch. NULL không đụng nhau trong Postgres,
+// nên các dòng con (sepayId = null) không bị ràng buộc này chặn — đúng ý muốn.
+@Unique(['userId', 'sepayId'])
 // Cho màn hình danh sách + lọc theo khoảng ngày
 @Index(['userId', 'date'])
 // Cho biểu đồ chi theo danh mục
@@ -38,11 +41,11 @@ export class Transaction extends BaseEntity {
    * trên `Wallet`, không phải migrate lại bảng giao dịch.
    */
   @Column('uuid')
-  walletId: string;
+  bankAccountId: string;
 
-  @ManyToOne(() => Wallet, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'walletId' })
-  wallet: Wallet;
+  @ManyToOne(() => BankAccount, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'bankAccountId' })
+  bankAccount: BankAccount;
 
   /**
    * Thuộc danh mục nào — BẮT BUỘC.
@@ -80,6 +83,22 @@ export class Transaction extends BaseEntity {
   /** Ghi chú tự do, VD "Ăn trưa với team" */
   @Column({ type: 'varchar', nullable: true })
   note?: string | null;
+
+  /**
+   * `id` của giao dịch bên SePay — **khóa chống trùng**.
+   *
+   * SePay gọi lại webhook khi không nhận được 2xx, nên cùng một giao dịch có thể đến nhiều
+   * lần. Không có khóa này thì mỗi lần gọi lại là một dòng mới và số dư phồng lên vô hình.
+   *
+   * `null` với giao dịch KHÔNG đến từ ngân hàng — cụ thể là các dòng con sinh ra khi tách
+   * một hóa đơn chia cho bạn bè.
+   */
+  @Column({ type: 'int', nullable: true })
+  sepayId?: number | null;
+
+  /** Mã tham chiếu ngân hàng — để đối chiếu với sao kê khi có tranh chấp */
+  @Column({ type: 'varchar', nullable: true })
+  referenceCode?: string | null;
 
   /**
    * Nhãn phụ để lọc chéo danh mục, VD ["du-lich-da-lat", "cong-viec"].
