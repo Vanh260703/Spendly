@@ -1,12 +1,12 @@
 'use client';
 
-import { Landmark, RefreshCw, TriangleAlert } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Landmark, RefreshCw, TriangleAlert } from 'lucide-react';
 import { Suspense, useState } from 'react';
 import { TransactionFilters, type BoLoc } from '@/components/transactions/TransactionFilters';
 import { TransactionList } from '@/components/transactions/TransactionList';
 import { Button, Card, ErrorState, Skeleton } from '@/components/ui';
 import {
-  useBalance, useBankAccounts, useSepayStatus, useSyncSepay,
+  useBalance, useBankAccounts, useSepayStatus, useSummary, useSyncSepay,
 } from '@/hooks/useFinance';
 import type { ApiError } from '@/lib/api/client';
 import { formatDate, formatMoney } from '@/lib/format';
@@ -28,6 +28,8 @@ export default function DongTienPage() {
   const dongBo = useSyncSepay();
 
   const [loc, setLoc] = useState<BoLoc>({});
+  // Tổng thu/chi bám theo ĐÚNG bộ lọc ngày — đặt khoảng là tháng thì ra số của tháng đó
+  const { data: tong } = useSummary({ from: loc.from, to: loc.to });
 
   const b = balance.data;
   const tk = taiKhoan?.[0];
@@ -118,7 +120,46 @@ export default function DongTienPage() {
         <TransactionFilters onChange={setLoc} />
       </Suspense>
 
-      <TransactionList filters={{ q: loc.q, from: loc.from, to: loc.to }} />
+      {/* ————— Tiền vào / tiền ra của khoảng đang lọc ————— */}
+      <div className="grid grid-cols-2 gap-3">
+        <Card className="!py-3">
+          <div className="muted flex items-center gap-1.5 text-xs">
+            <ArrowDownLeft size={14} className="text-income" /> Tiền vào
+          </div>
+          <p className="tabular mt-1 text-xl font-bold text-income">
+            {formatMoney(tong?.income ?? 0)}
+          </p>
+          {/*
+            Chỉ hiện dòng phụ khi con số ngân hàng KHÁC con số thực — nếu không thì mỗi ô
+            luôn có hai dòng giống nhau, thành nhiễu.
+          */}
+          {(tong?.repaidInPeriod ?? 0) > 0 && (
+            <p className="muted mt-0.5 text-[11px]">
+              Ngân hàng cộng {formatMoney(tong!.incomeGross)} · trừ{' '}
+              {formatMoney(tong!.repaidInPeriod)} bạn bè trả lại
+            </p>
+          )}
+        </Card>
+
+        <Card className="!py-3">
+          <div className="muted flex items-center gap-1.5 text-xs">
+            <ArrowUpRight size={14} className="text-expense" /> Tiền ra
+          </div>
+          <p className="tabular mt-1 text-xl font-bold text-expense">
+            {formatMoney(tong?.expense ?? 0)}
+          </p>
+          {(tong?.lentInPeriod ?? 0) > 0 && (
+            <p className="muted mt-0.5 text-[11px]">
+              Ngân hàng trừ {formatMoney(tong!.expenseGross)} · trừ{' '}
+              {formatMoney(tong!.lentInPeriod)} cho mượn
+            </p>
+          )}
+        </Card>
+      </div>
+
+      <TransactionList
+        filters={{ q: loc.q, from: loc.from, to: loc.to, unreviewed: loc.unreviewed }}
+      />
     </div>
   );
 }

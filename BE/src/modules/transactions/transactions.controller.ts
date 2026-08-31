@@ -50,6 +50,15 @@ export class TransactionsController {
    * đã là số dư thật, không có gì để "điều chỉnh".
    */
 
+  /**
+   * Đặt TRƯỚC `:id` — nếu không Nest sẽ khớp "unreviewed-count" vào `:id` và
+   * `ParseUUIDPipe` ném 400.
+   */
+  @Get('unreviewed-count')
+  demChuaXet(@CurrentUser('id') userId: string) {
+    return this.transactions.demChuaXet(userId).then((count) => ({ count }));
+  }
+
   @Get(':id')
   async findOne(
     @CurrentUser() user: AuthUser,

@@ -45,6 +45,8 @@ export interface TxFilters {
   from?: string; to?: string; categoryId?: string; type?: string;
   minAmount?: number; maxAmount?: number; q?: string; tags?: string;
   cursor?: string; limit?: number;
+  /** Chỉ hiện khoản CHƯA xét có phần trả hộ hay không */
+  unreviewed?: boolean;
 }
 
 export const transactionsApi = {
@@ -57,6 +59,7 @@ export const transactionsApi = {
   update: (id: string, body: Record<string, unknown>) =>
     api.patch<Transaction>(`/transactions/${id}`, body),
   remove: (id: string) => api.delete<void>(`/transactions/${id}`),
+  demChuaXet: () => api.get<{ count: number }>('/transactions/unreviewed-count'),
 };
 
 export const sepayApi = {
@@ -71,7 +74,7 @@ export const sepayApi = {
 
 export const statsApi = {
   balance: () => api.get<BalanceStats>('/stats/balance'),
-  summary: (params: { period?: string } = {}) =>
+  summary: (params: { period?: string; from?: string; to?: string } = {}) =>
     api.get<SummaryStats>(`/stats/summary${qs(params)}`),
   byCategory: (params: { period?: string; type?: string } = {}) =>
     api.get<CategoryStat[]>(`/stats/by-category${qs(params)}`),

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { TZDate } from '@date-fns/tz';
 import { Repository } from 'typeorm';
 import {
   DateRange,
@@ -66,24 +67,53 @@ export class StatsService {
       RedisKeys.stats(userId, 'summary', rangeKey(range)),
       RedisTtl.STATS,
       async () => {
-        const [hienTai, kyTruoc, ba] = await Promise.all([
+        const [hienTai, kyTruoc, ba, choMuon, traLai] = await Promise.all([
           this.tongTheoLoai(userId, range),
           this.tongTheoLoai(userId, shiftRange(range, 1, kind)),
           Promise.all(
             [1, 2, 3].map((n) => this.tongTheoLoai(userId, shiftRange(range, n, kind))),
           ),
+          this.friends.tongChoMuonTrongKy(userId, range.start, range.end),
+          this.friends.tongTraLaiTrongKy(userId, range.start, range.end),
         ]);
 
-        const tongChi = hienTai.expense;
+        /*
+         * ⚠️ Trừ phần CHO MƯỢN ra khỏi tổng chi.
+         *
+         * `transactions` giữ nguyên con số ngân hàng báo (1.000.000₫ cho bữa ăn 4 người),
+         * nên nếu cộng thẳng thì tổng chi tính cả 750.000₫ mà bạn bè sẽ trả lại — bạn nhìn
+         * vào sẽ tưởng mình tiêu gấp mấy lần thực tế.
+         *
+         * Trước đây việc này do một danh mục hệ thống lo, nhưng nó đòi phải cắt nhỏ giao
+         * dịch ngân hàng. Trừ ở tầng thống kê thì sổ ngân hàng còn nguyên vẹn.
+         */
+        const tongChi = Math.max(0, hienTai.expense - choMuon);
 
+        /*
+         * ⚠️ Trừ tiền TRẢ LẠI ra khỏi thu nhập — đối xứng với việc trừ tiền cho mượn khỏi
+         * chi tiêu.
+         *
+         * Bạn bè chuyển khoản trả nợ thì ngân hàng báo về như một khoản THU, nhưng đó là
+         * tiền của chính bạn quay về. Không trừ thì mỗi lần được trả nợ, "thu nhập" lại
+         * phồng lên và con số chênh lệch thu-chi sai theo cả hai hướng.
+         */
+        const tongThu = Math.max(0, hienTai.income - traLai);
         const tbBaKy = ba.reduce((s, k) => s + k.expense, 0) / 3;
 
         return {
           from: range.start,
           to: range.end,
-          income: hienTai.income,
-          expense: hienTai.expense,
-          net: hienTai.income - hienTai.expense,
+          income: tongThu,
+          /** Tổng ngân hàng cộng vào, TRƯỚC khi bỏ phần trả lại — để đối chiếu sao kê */
+          incomeGross: hienTai.income,
+          /** Phần bạn bè trả lại trong kỳ — tiền của bạn quay về, không phải thu nhập */
+          repaidInPeriod: traLai,
+          expense: tongChi,
+          /** Tổng ngân hàng trừ, TRƯỚC khi bỏ phần cho mượn — để đối chiếu với sao kê */
+          expenseGross: hienTai.expense,
+          /** Phần đã ứng cho người khác trong kỳ, sẽ được trả lại */
+          lentInPeriod: choMuon,
+          net: tongThu - tongChi,
           comparison: {
             previousPeriodExpense: kyTruoc.expense,
             changePercent:
@@ -266,6 +296,21 @@ export class StatsService {
    *
    * @param boQuaChuaPhanLoai bật khi vẽ biểu đồ theo danh mục
    */
+  /**
+   * `"2026-08-31"` → mốc đầu hoặc cuối ngày đó **theo múi giờ người dùng**.
+   *
+   * ⚠️ Hai lỗi kinh điển gặp nhau ở đây: quên cuối ngày (`to` loại bỏ chính ngày đó) và
+   * quên múi giờ (nửa đêm VN là 17:00 hôm trước theo UTC). Cùng một hàm với
+   * `TransactionsService` — hai chỗ tính khác nhau là sớm muộn cũng lệch.
+   */
+  private bienNgay(ngay: string, phia: 'dau' | 'cuoi'): Date {
+    const tz = process.env.TIMEZONE ?? 'Asia/Ho_Chi_Minh';
+    const [y, m, d] = ngay.split('-').map(Number);
+    return phia === 'dau'
+      ? new Date(new TZDate(y, m - 1, d, 0, 0, 0, 0, tz).getTime())
+      : new Date(new TZDate(y, m - 1, d, 23, 59, 59, 999, tz).getTime());
+  }
+
   private baseQuery(userId: string, range: DateRange, boQuaChuaPhanLoai = false) {
     const qb = this.txRepo
       .createQueryBuilder('t')
@@ -337,7 +382,11 @@ export class StatsService {
        * Báo cáo chạy theo lịch cần điều này, nếu không con số "so với kỳ trước" sẽ sai.
        */
       return {
-        range: { start: query.from, end: query.to },
+        // Nới thành TRỌN NGÀY theo múi giờ người dùng — xem `bienNgay()`
+        range: {
+          start: this.bienNgay(query.from, 'dau'),
+          end: this.bienNgay(query.to, 'cuoi'),
+        },
         kind: (query as { periodKind?: PeriodKind }).periodKind ?? 'week',
       };
     }

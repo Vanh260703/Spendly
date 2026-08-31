@@ -1,11 +1,10 @@
 'use client';
 
-import { ArrowDownLeft, ArrowUpRight, HandCoins, Trash2 } from 'lucide-react';
+import { HandCoins, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import {
-  Button, EmptyState, ErrorState, Field, Input, MoneyInput, Modal, Select, Skeleton, cn,
+  Button, EmptyState, ErrorState, Field, Input, MoneyInput, Modal, Skeleton, cn,
 } from '@/components/ui';
-import { useCategories } from '@/hooks/useFinance';
 import {
   useContactDetail, useCreateSettlement, useDeleteSharedExpense,
 } from '@/hooks/useFriends';
@@ -21,17 +20,12 @@ function moTaCongNo(name: string, balance: number) {
 
 export function ContactDetail({ contactId, onClose }: { contactId: string; onClose: () => void }) {
   const { data, isLoading, isError, error, refetch } = useContactDetail(contactId);
-  const { data: danhMuc } = useCategories({ type: 'expense' });
   const tatToan = useCreateSettlement();
   const xoaBill = useDeleteSharedExpense();
 
-  const [moTatToan, setMoTatToan] = useState(false);
-  const [form, setForm] = useState({
-    direction: 'they_paid_me',
-    amount: '' as number | '',
-    date: toDateInputValue(),
-    categoryId: '',
-  });
+  const [moTraNo, setMoTraNo] = useState(false);
+  const [soTien, setSoTien] = useState<number | ''>('');
+  const [ngay, setNgay] = useState(toDateInputValue());
 
   if (isLoading) return <Skeleton className="h-64" />;
   if (isError) {
@@ -41,20 +35,33 @@ export function ContactDetail({ contactId, onClose }: { contactId: string; onClo
 
   const { contact, history } = data;
   const mo = moTaCongNo(contact.name, contact.balance);
-  const toiTraLai = form.direction === 'i_paid_them';
 
-  const guiTatToan = (e: React.FormEvent) => {
+  /*
+   * Chiều trả nợ SUY RA TỪ SỐ DƯ, không bắt người dùng chọn.
+   *
+   * Họ nợ mình thì chỉ có thể là "họ đã trả"; mình nợ họ thì chỉ có thể là "mình thanh
+   * toán". Cho chọn cả hai chiều là mở đường chọn nhầm, mà chọn nhầm thì công nợ chạy
+   * ngược và rất khó nhận ra.
+   */
+  const hoNoToi = contact.balance > 0;
+  const conNo = Math.abs(contact.balance);
+
+  const guiTraNo = (e: React.FormEvent) => {
     e.preventDefault();
     tatToan.mutate(
       {
         contactId,
-        direction: form.direction,
-        amount: Number(form.amount),
-        date: new Date(form.date).toISOString(),
-        categoryId: toiTraLai ? form.categoryId : null,
+        direction: hoNoToi ? 'they_paid_me' : 'i_paid_them',
+        amount: Number(soTien),
+        date: new Date(ngay).toISOString(),
       },
-      { onSuccess: () => setMoTatToan(false) },
+      { onSuccess: () => { setMoTraNo(false); setSoTien(''); } },
     );
+  };
+
+  const moFormTraNo = () => {
+    setSoTien(conNo); // mặc định trả đủ — trường hợp thường gặp nhất
+    setMoTraNo(true);
   };
 
   return (
@@ -64,127 +71,150 @@ export function ContactDetail({ contactId, onClose }: { contactId: string; onClo
       </div>
 
       <div className="flex gap-2">
-        <Button className="flex-1" onClick={() => setMoTatToan(true)}>
-          <HandCoins size={16} /> Ghi tất toán
+        {/* Sòng phẳng rồi thì không có gì để trả — ẩn nút thay vì để nó mở ra form vô nghĩa */}
+        {contact.balance !== 0 && (
+          <Button className="flex-1" onClick={moFormTraNo}>
+            <HandCoins size={16} />
+            {hoNoToi ? 'Đã trả' : 'Thanh toán'}
+          </Button>
+        )}
+        <Button variant="ghost" className={contact.balance === 0 ? 'flex-1' : ''} onClick={onClose}>
+          Đóng
         </Button>
-        <Button variant="ghost" onClick={onClose}>Đóng</Button>
       </div>
 
       {!history.length ? (
-        <EmptyState title="Chưa có phát sinh nào" description="Ghi một khoản chi chung để bắt đầu theo dõi." />
+        <EmptyState
+          title="Chưa có phát sinh nào"
+          description="Chia một khoản chi cho người này để bắt đầu theo dõi."
+        />
       ) : (
-        <div className="space-y-2">
-          {history.map((h) => (
-            <div key={`${h.kind}-${h.id}`} className="flex items-start gap-3 rounded-xl bg-[var(--surface-2)] p-3">
-              <span
-                className={cn(
-                  'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg',
-                  h.effect > 0 ? 'bg-income/15 text-income' : 'bg-expense/15 text-expense',
-                )}
-              >
-                {h.effect > 0 ? <ArrowUpRight size={16} /> : <ArrowDownLeft size={16} />}
-              </span>
+        /*
+         * Bảng, không phải danh sách thẻ — cùng kiểu với sổ giao dịch. Ba cột đủ trả lời
+         * "khoản nào, bao nhiêu, đẩy công nợ đi hướng nào".
+         */
+        <div className="-mx-1 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="muted border-b text-left text-xs">
+                <th className="px-2 py-2 font-medium whitespace-nowrap">Ngày</th>
+                <th className="px-2 py-2 font-medium">Nội dung</th>
+                <th className="px-2 py-2 text-right font-medium whitespace-nowrap">
+                  Công nợ
+                </th>
+                <th className="w-8 px-1 py-2" />
+              </tr>
+            </thead>
 
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {h.kind === 'settlement'
-                    ? h.direction === 'they_paid_me'
-                      ? `${contact.name} trả lại bạn`
-                      : `Bạn trả lại ${contact.name}`
-                    : h.note || h.categoryName || 'Chi chung'}
-                </p>
-                <p className="muted text-xs">
-                  {formatDate(h.date)}
-                  {h.kind === 'shared_expense' && (
-                    <>
-                      {' · '}
-                      {h.iPaid ? 'bạn ứng' : `${contact.name} ứng`} {formatMoney(h.totalAmount ?? 0)}
-                    </>
-                  )}
-                </p>
-              </div>
+            <tbody className="divide-y">
+              {history.map((h) => (
+                <tr key={`${h.kind}-${h.id}`} className="group">
+                  <td className="muted tabular px-2 py-2 whitespace-nowrap">
+                    {formatDate(h.date)}
+                  </td>
 
-              <div className="flex shrink-0 items-center gap-2">
-                <span className={cn('tabular text-sm font-medium', h.effect > 0 ? 'text-income' : 'text-expense')}>
-                  {h.effect > 0 ? '+' : ''}{formatMoney(h.effect)}
-                </span>
-                {h.kind === 'shared_expense' && (
-                  <button
-                    type="button"
-                    onClick={() => xoaBill.mutate(h.id)}
-                    className="muted p-1"
-                    aria-label="Xóa khoản chi chung"
+                  <td className="max-w-0 px-2 py-2">
+                    <span className="block truncate">
+                      {h.kind === 'settlement'
+                        ? h.direction === 'they_paid_me'
+                          ? `${contact.name} trả lại bạn`
+                          : `Bạn trả lại ${contact.name}`
+                        : h.note || 'Chi chung'}
+                    </span>
+                    {h.kind === 'shared_expense' && (
+                      <span className="muted text-xs">
+                        Hóa đơn {formatMoney(h.totalAmount ?? 0)} ·{' '}
+                        {h.iPaid ? 'bạn ứng' : `${contact.name} ứng`}
+                      </span>
+                    )}
+                  </td>
+
+                  {/* Dương = họ nợ thêm · âm = công nợ giảm đi */}
+                  <td
+                    className={cn(
+                      'tabular px-2 py-2 text-right font-medium whitespace-nowrap',
+                      h.effect > 0 ? 'text-income' : 'text-expense',
+                    )}
                   >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+                    {h.effect > 0 ? '+' : '−'}
+                    {formatMoney(Math.abs(h.effect))}
+                  </td>
+
+                  <td className="px-1 py-1">
+                    {h.kind === 'shared_expense' && (
+                      <button
+                        type="button"
+                        onClick={() => xoaBill.mutate(h.id)}
+                        className="muted p-1 opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+                        aria-label="Xóa khoản chi chung"
+                        title="Xóa khoản chi chung"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      <Modal open={moTatToan} onClose={() => setMoTatToan(false)} title="Ghi tất toán">
-        <form onSubmit={guiTatToan} className="space-y-4">
-          <div className="flex rounded-xl bg-[var(--surface-2)] p-1">
-            {[
-              { v: 'they_paid_me', nhan: `${contact.name} trả tôi` },
-              { v: 'i_paid_them', nhan: `Tôi trả ${contact.name}` },
-            ].map((o) => (
-              <button
-                key={o.v}
-                type="button"
-                onClick={() => setForm((f) => ({ ...f, direction: o.v }))}
-                className={cn(
-                  'flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition',
-                  form.direction === o.v ? 'bg-brand text-white' : 'muted',
-                )}
-              >
-                {o.nhan}
-              </button>
-            ))}
+      <Modal
+        open={moTraNo}
+        onClose={() => setMoTraNo(false)}
+        title={hoNoToi ? `${contact.name} đã trả` : `Thanh toán cho ${contact.name}`}
+      >
+        <form onSubmit={guiTraNo} className="space-y-4">
+          <div className="rounded-xl bg-[var(--surface-2)] px-4 py-3 text-center">
+            <p className="muted text-xs">{hoNoToi ? 'Đang nợ bạn' : 'Bạn đang nợ'}</p>
+            <p className="tabular text-2xl font-bold">{formatMoney(conNo)}</p>
+          </div>
+
+          {/*
+            Hai trường hợp bạn nêu: trả đủ, hoặc trả một phần. Trả đủ là trường hợp thường
+            gặp nhất nên đặt sẵn số tiền — mở form ra bấm Lưu là xong, không phải gõ gì.
+          */}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant={soTien === conNo ? 'primary' : 'secondary'}
+              className="flex-1"
+              onClick={() => setSoTien(conNo)}
+            >
+              Trả đủ {formatMoney(conNo)}
+            </Button>
+            <Button
+              type="button"
+              variant={soTien !== conNo ? 'primary' : 'secondary'}
+              className="flex-1"
+              onClick={() => setSoTien('')}
+            >
+              Trả một phần
+            </Button>
           </div>
 
           <Field label="Số tiền">
-            <MoneyInput
-              value={form.amount}
-              onChange={(v) => setForm((f) => ({ ...f, amount: v }))}
-              required
-            />
+            <MoneyInput value={soTien} onChange={setSoTien} required autoFocus />
           </Field>
 
           <Field label="Ngày">
-            <Input
-              type="date"
-              value={form.date}
-              onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
-              required
-            />
+            <Input type="date" value={ngay} onChange={(e) => setNgay(e.target.value)} required />
           </Field>
 
           {/*
-            Chỉ chiều "tôi trả lại" mới cần danh mục: đó mới là lúc bạn THỰC SỰ tiêu tiền.
-            Chiều ngược lại đi vào danh mục hệ thống nên không hỏi — hỏi cũng không dùng.
+            Trả DƯ được phép — công nợ đổi dấu. Nhưng phải nói trước, nếu không người dùng
+            gõ nhầm một số 0 rồi tưởng app tính sai.
           */}
-          {toiTraLai && (
-            <Field label="Danh mục cho khoản chi này">
-              <Select
-                value={form.categoryId}
-                onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
-                required
-              >
-                <option value="">— Chọn —</option>
-                {(danhMuc ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </Select>
-            </Field>
+          {Number(soTien) > conNo && (
+            <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
+              Nhiều hơn số đang nợ {formatMoney(Number(soTien) - conNo)} —{' '}
+              {hoNoToi ? `bạn sẽ nợ lại ${contact.name}` : `${contact.name} sẽ nợ lại bạn`}.
+            </p>
           )}
 
           <p className="muted text-xs">
-            {toiTraLai
-              ? 'Đây mới là lúc tiền rời ví bạn, nên khoản này sẽ vào thống kê chi tiêu.'
-              : 'Tiền của bạn quay về nên số dư tăng, nhưng KHÔNG tính là thu nhập.'}
+            Chỉ ghi công nợ, không tạo giao dịch — tiền chuyển khoản đã có ngân hàng báo về.
           </p>
 
           <Button type="submit" loading={tatToan.isPending} className="w-full">

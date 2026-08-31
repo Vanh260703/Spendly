@@ -70,8 +70,14 @@ export function useDeleteCategory() {
 export const useBalance = () =>
   useQuery({ queryKey: ['balance'], queryFn: statsApi.balance });
 
-export const useSummary = (period = 'month') =>
-  useQuery({ queryKey: ['summary', period], queryFn: () => statsApi.summary({ period }) });
+/**
+ * Tổng thu/chi của một khoảng.
+ *
+ * Nhận `from`/`to` để bám theo đúng bộ lọc ngày trên màn hình — đặt khoảng là tháng thì ra
+ * số của tháng đó. Bỏ trống cả hai thì BE tính kỳ tháng hiện tại.
+ */
+export const useSummary = (params: { from?: string; to?: string } = {}) =>
+  useQuery({ queryKey: ['summary', params], queryFn: () => statsApi.summary(params) });
 
 export const useByCategory = (period = 'month', type = 'expense') =>
   useQuery({
@@ -185,6 +191,26 @@ export function useSyncSepay() {
           : 'Đã đồng bộ — không có giao dịch nào mới',
       );
     },
+    onError: (e) => toast.error(loi(e)),
+  });
+}
+
+/** Bao nhiêu khoản chưa xét — dùng cho huy hiệu trên ô lọc */
+export const useSoChuaXet = () =>
+  useQuery({ queryKey: ['transactions', 'unreviewed-count'], queryFn: transactionsApi.demChuaXet });
+
+/**
+ * Đánh dấu một khoản đã xét (hoặc bỏ đánh dấu).
+ *
+ * Không toast: đây là thao tác lướt nhanh qua hàng chục dòng, mỗi dòng một thông báo là
+ * màn hình đầy toast.
+ */
+export function useDanhDauDaXet() {
+  const lamMoi = useLamMoiTaiChinh();
+  return useMutation({
+    mutationFn: ({ id, reviewed }: { id: string; reviewed: boolean }) =>
+      transactionsApi.update(id, { reviewed }),
+    onSuccess: lamMoi,
     onError: (e) => toast.error(loi(e)),
   });
 }

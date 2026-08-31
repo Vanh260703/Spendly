@@ -43,57 +43,38 @@ const shareSchema = z.object({
  * - **Người khác trả** → không có giao dịch nào (tiền chưa rời tài khoản bạn), nên cần
  *   `totalAmount` + `date` khai tay.
  */
+/**
+ * Ghi một lần chi chung. Ba hình dạng:
+ *
+ * - **Bạn trả qua ngân hàng** → có `transactionId`. App **không sửa gì** ở giao dịch đó,
+ *   chỉ ghi công nợ và lấy số tiền/ngày từ nó.
+ * - **Bạn trả tiền mặt** → không `transactionId`, khai `totalAmount` + `date`.
+ * - **Người khác trả hộ bạn** → có `payerContactId`, cũng khai tay số tiền + ngày.
+ */
 export const createSharedExpenseSchema = z
   .object({
     payerContactId: z.string().uuid().nullable().default(null),
-    /** Giao dịch ngân hàng cần tách — CHỈ khi bạn là người trả */
+    /** Giao dịch ngân hàng tương ứng — chỉ để tham chiếu, KHÔNG bị sửa */
     transactionId: z.string().uuid().optional().nullable(),
-    /** Chỉ dùng khi người khác trả; bạn trả thì lấy từ giao dịch ngân hàng */
+    /** Bắt buộc khi không gắn với giao dịch ngân hàng */
     totalAmount: tienDuong.optional(),
     date: z.coerce.date().optional(),
     note: z.string().trim().max(255).optional().nullable(),
-    /**
-     * Tùy chọn — giao diện không còn hỏi danh mục.
-     *
-     * Bỏ trống thì phần của bạn rơi vào `"Chưa phân loại"`. Danh mục giờ chỉ còn một nhiệm
-     * vụ duy nhất: tách **tiền cho mượn** ra khỏi tiền tiêu thật, và việc đó app tự làm.
-     */
-    categoryId: z.string().uuid().optional().nullable(),
-    treatAmount: tienKhongAm.default(0),
-    treatCategoryId: z.string().uuid().optional().nullable(),
     shares: z.array(shareSchema).min(1, 'Phải có ít nhất một phần'),
   })
-  .refine((d) => d.payerContactId !== null || !!d.transactionId, {
-    message: 'Bạn trả thì phải chọn giao dịch ngân hàng tương ứng để tách',
-    path: ['transactionId'],
-  })
-  .refine((d) => d.payerContactId === null || (!!d.totalAmount && !!d.date), {
-    message: 'Người khác trả thì phải khai số tiền và ngày',
+  .refine((d) => !!d.transactionId || (!!d.totalAmount && !!d.date), {
+    message: 'Không gắn giao dịch ngân hàng thì phải khai số tiền và ngày',
     path: ['totalAmount'],
+  })
+  // Người khác trả thì tiền không đi qua tài khoản bạn — không có giao dịch nào để gắn
+  .refine((d) => d.payerContactId === null || !d.transactionId, {
+    message: 'Người khác trả thì không gắn được với giao dịch ngân hàng của bạn',
+    path: ['transactionId'],
   })
   // Mỗi người chỉ được một phần; phần của bạn (`contactId: null`) cũng vậy
   .refine(
     (d) => new Set(d.shares.map((s) => s.contactId)).size === d.shares.length,
     { message: 'Mỗi người chỉ được có một phần', path: ['shares'] },
-  )
-  .refine((d) => d.treatAmount === 0 || !!d.treatCategoryId, {
-    message: 'Có phần mời thì phải chọn danh mục cho phần đó',
-    path: ['treatCategoryId'],
-  })
-  /*
-   * "Mời" chỉ có nghĩa khi CHÍNH BẠN móc tiền ra. Người khác trả hộ mà lại khai bạn mời thì
-   * không biết tiền đó ở đâu ra — chặn sớm còn hơn để sinh giao dịch vô nghĩa.
-   */
-  .refine((d) => d.payerContactId === null || d.treatAmount === 0, {
-    message: 'Người khác trả thì bạn không thể "mời" trong cùng hóa đơn đó',
-    path: ['treatAmount'],
-  })
-  .refine(
-    (d) => {
-      const cuaBan = d.shares.find((s) => s.contactId === null)?.amount ?? 0;
-      return d.treatAmount <= cuaBan;
-    },
-    { message: 'Phần mời không được lớn hơn phần của bạn', path: ['treatAmount'] },
   );
 
 export const listSharedExpensesSchema = z.object({
@@ -103,23 +84,13 @@ export const listSharedExpensesSchema = z.object({
 
 // ————————————————————— Tất toán —————————————————————
 
-export const createSettlementSchema = z
-  .object({
-    contactId: z.string().uuid(),
-    direction: z.nativeEnum(SettlementDirection),
-    amount: tienDuong,
-    date: z.coerce.date(),
-    note: z.string().trim().max(255).optional().nullable(),
-    /**
-     * Chỉ dùng khi `I_PAID_THEM`: lúc bạn trả lại tiền mới là lúc bạn THỰC SỰ tiêu, nên
-     * khoản đó vào danh mục THẬT. Chiều ngược lại đi vào danh mục hệ thống nên không hỏi.
-     */
-    categoryId: z.string().uuid().optional().nullable(),
-  })
-  .refine(
-    (d) => d.direction !== SettlementDirection.I_PAID_THEM || !!d.categoryId,
-    { message: 'Bạn trả lại tiền thì phải chọn danh mục cho khoản chi đó', path: ['categoryId'] },
-  );
+export const createSettlementSchema = z.object({
+  contactId: z.string().uuid(),
+  direction: z.nativeEnum(SettlementDirection),
+  amount: tienDuong,
+  date: z.coerce.date(),
+  note: z.string().trim().max(255).optional().nullable(),
+});
 
 export type CreateContactDto = z.infer<typeof createContactSchema>;
 export type UpdateContactDto = z.infer<typeof updateContactSchema>;

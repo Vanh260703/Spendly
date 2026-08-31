@@ -21,6 +21,10 @@ export const createTransactionSchema = z.object({
 export const updateTransactionSchema = createTransactionSchema
   .omit({ type: true })
   .partial()
+  .extend({
+    /** `true` = đánh dấu đã xét · `false` = trả về chưa xét */
+    reviewed: z.boolean().optional(),
+  })
   .refine((d) => Object.keys(d).length > 0, 'Không có gì để cập nhật');
 
 export const listTransactionQuerySchema = z.object({
@@ -35,6 +39,8 @@ export const listTransactionQuerySchema = z.object({
    */
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải dạng yyyy-mm-dd').optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải dạng yyyy-mm-dd').optional(),
+  /** `true` = chỉ hiện những khoản CHƯA xét */
+  unreviewed: z.coerce.boolean().optional(),
   categoryId: z.string().uuid().optional(),
   type: z.nativeEnum(TxType).optional(),
   /** CSV: `tags=du-lich,cong-viec` */
@@ -68,6 +74,8 @@ export interface TransactionDto {
   date: Date;
   note: string | null;
   tags: string[];
+  /** `null` = chưa xét xem có phần trả hộ người khác không */
+  reviewedAt: Date | null;
   category: {
     id: string;
     name: string;
@@ -85,6 +93,7 @@ export function toTransactionDto(t: Transaction & { category?: Category }): Tran
     date: t.date,
     note: t.note ?? null,
     tags: t.tags ?? [],
+    reviewedAt: t.reviewedAt ?? null,
     category: t.category
       ? {
           id: t.category.id,

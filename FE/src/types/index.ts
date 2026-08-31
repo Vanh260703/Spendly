@@ -20,6 +20,8 @@ export interface Transaction {
   date: string;
   note: string | null;
   tags: string[];
+  /** `null` = chưa xét xem có phần trả hộ người khác không */
+  reviewedAt: string | null;
   category: {
     id: string;
     name: string;
@@ -65,7 +67,15 @@ export interface SummaryStats {
   from: string;
   to: string;
   income: number;
+  /** Tổng ngân hàng cộng vào, trước khi bỏ phần bạn bè trả lại */
+  incomeGross: number;
+  /** Bạn bè trả lại trong kỳ — tiền của bạn quay về, không phải thu nhập */
+  repaidInPeriod: number;
   expense: number;
+  /** Tổng ngân hàng trừ, trước khi bỏ phần cho mượn */
+  expenseGross: number;
+  /** Phần bạn đã ứng cho người khác trong kỳ */
+  lentInPeriod: number;
   net: number;
   comparison: {
     previousPeriodExpense: number;
@@ -146,11 +156,11 @@ export interface SharedExpense {
   date: string;
   note?: string | null;
   totalAmount: number;
-  treatAmount: number;
   /** true = BẠN là người trả */
   iPaid: boolean;
+  /** Giao dịch ngân hàng tương ứng — `null` khi trả tiền mặt */
+  transactionId: string | null;
   payer?: { id: string; name: string; color: string } | null;
-  category?: { id: string; name: string } | null;
   shares: SharedExpenseShare[];
 }
 

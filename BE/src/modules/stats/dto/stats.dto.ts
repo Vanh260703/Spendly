@@ -8,8 +8,15 @@ import { TxType } from '../../transactions/entities/transaction.entity';
 export const rangeQuerySchema = z
   .object({
     period: z.enum(['today', 'week', 'month']).optional(),
-    from: z.coerce.date().optional(),
-    to: z.coerce.date().optional(),
+    /**
+     * `yyyy-mm-dd` — giữ dạng CHUỖI, không `coerce.date()`.
+     *
+     * ⚠️ `coerce.date()` đổi `"2026-08-31"` thành `2026-08-31T00:00:00Z`, nên `to` loại bỏ
+     * mọi giao dịch trong CHÍNH ngày đó, còn `from` cắt mất buổi sáng sớm giờ VN. Service
+     * mới là chỗ nới thành trọn ngày theo múi giờ người dùng.
+     */
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải dạng yyyy-mm-dd').optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải dạng yyyy-mm-dd').optional(),
     /** Chỉ dùng nội bộ (job báo cáo): nói rõ khoảng from/to là kỳ tuần hay tháng */
     periodKind: z.enum(['today', 'week', 'month']).optional(),
   })

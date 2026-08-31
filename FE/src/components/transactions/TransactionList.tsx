@@ -1,10 +1,9 @@
 'use client';
 
-import { Receipt, Users } from 'lucide-react';
+import { Check, Receipt } from 'lucide-react';
 import { useState } from 'react';
-import { SplitBillForm } from '@/components/friends/SplitBillForm';
-import { Button, Card, EmptyState, ErrorState, Modal, Skeleton, cn } from '@/components/ui';
-import { useTransactions } from '@/hooks/useFinance';
+import { Button, Card, EmptyState, ErrorState, Skeleton, cn } from '@/components/ui';
+import { useDanhDauDaXet, useTransactions } from '@/hooks/useFinance';
 import type { TxFilters } from '@/lib/api';
 import type { ApiError } from '@/lib/api/client';
 import { formatMoney } from '@/lib/format';
@@ -18,7 +17,11 @@ function ngayGio(iso: string): string {
 }
 
 /**
- * Sổ giao dịch dạng BẢNG.
+ * Sổ giao dịch dạng BẢNG — **chỉ đọc**.
+ *
+ * Không có nút chia bill ở đây: công nợ thuộc về trang Danh bạ, còn bảng này là bản sao sao
+ * kê ngân hàng. Trộn hai việc vào một chỗ làm mờ ranh giới mà chính ranh giới đó mới giữ
+ * cho sổ ngân hàng không bị app cắt gọt.
  *
  * Dữ liệu đến từ ngân hàng nên mỗi dòng là một sự kiện có sẵn cấu trúc: thời điểm, nội dung
  * chuyển khoản, số tiền, chiều. Bảng đọc nhanh hơn thẻ vì mắt quét theo cột — nhất là khi
@@ -31,8 +34,7 @@ export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
   const {
     data, isLoading, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage,
   } = useTransactions(filters);
-
-  const [chiaBill, setChiaBill] = useState<Transaction | null>(null);
+  const danhDau = useDanhDauDaXet();
 
   if (isLoading) return <Skeleton className="h-64" />;
 
@@ -75,7 +77,17 @@ export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
             <tbody className="divide-y">
               {items.map((t) => (
                 <tr key={t.id} className="group">
-                  <td className="muted tabular px-3 py-2.5 whitespace-nowrap">
+                  {/*
+                    Vạch màu bên trái đánh dấu khoản CHƯA xét. Dùng viền thay vì đổi nền cả
+                    dòng: đủ để mắt bắt được khi lướt, mà không làm bảng loang lổ khi có
+                    hàng chục dòng chưa xét.
+                  */}
+                  <td
+                    className={cn(
+                      'muted tabular border-l-2 px-3 py-2.5 whitespace-nowrap',
+                      t.reviewedAt ? 'border-transparent' : 'border-brand',
+                    )}
+                  >
                     {ngayGio(t.date)}
                   </td>
 
@@ -96,20 +108,37 @@ export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
                     {formatMoney(t.amount)}
                   </td>
 
-                  <td className="px-1 py-1">
-                    {/* Chỉ khoản CHI mới chia được — tiền về thì không có gì để đòi ai */}
-                    {t.type === 'expense' && (
+                  <td className="px-1 py-1 whitespace-nowrap">
+                    <span className="flex justify-end">
+                      {/*
+                        Nút "đã xét" luôn hiện với khoản chưa xét (không ẩn sau hover): đây
+                        là thao tác chính khi lướt hàng chờ, giấu đi là bắt rê chuột từng dòng.
+                        Khoản đã xét thì cho bấm lại để trả về hàng chờ, nhưng ẩn bớt.
+                      */}
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-                        onClick={() => setChiaBill(t)}
-                        aria-label="Chia cho bạn bè"
-                        title="Chia cho bạn bè"
+                        className={cn(
+                          'transition',
+                          t.reviewedAt && 'opacity-0 group-hover:opacity-100 focus:opacity-100',
+                        )}
+                        loading={danhDau.isPending && danhDau.variables?.id === t.id}
+                        onClick={() =>
+                          danhDau.mutate({ id: t.id, reviewed: !t.reviewedAt })
+                        }
+                        aria-label={t.reviewedAt ? 'Bỏ đánh dấu' : 'Đánh dấu đã xét'}
+                        title={
+                          t.reviewedAt
+                            ? 'Đã xét — bấm để trả về hàng chờ'
+                            : 'Không có phần trả hộ, đánh dấu đã xét'
+                        }
                       >
-                        <Users size={15} className="text-brand" />
+                        <Check
+                          size={15}
+                          className={t.reviewedAt ? 'muted' : 'text-ok'}
+                        />
                       </Button>
-                    )}
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -128,10 +157,6 @@ export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
           Xem thêm
         </Button>
       )}
-
-      <Modal open={!!chiaBill} onClose={() => setChiaBill(null)} title="Chia cho bạn bè">
-        {chiaBill && <SplitBillForm transaction={chiaBill} onDone={() => setChiaBill(null)} />}
-      </Modal>
     </>
   );
 }

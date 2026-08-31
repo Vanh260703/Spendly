@@ -101,6 +101,19 @@ export class Transaction extends BaseEntity {
   referenceCode?: string | null;
 
   /**
+   * Đã XÉT dòng này chưa — `null` = chưa.
+   *
+   * Giao dịch từ ngân hàng về không tự nói cho biết nó có phần trả hộ người khác hay không;
+   * chỉ mình bạn biết bữa đó mấy người. Không có cờ này thì không có cách nào trả lời câu
+   * **"tôi còn sót khoản nào chưa chia không?"** — một khoản bị quên sẽ âm thầm tính hết
+   * vào tiền bạn tiêu, và người kia không bao giờ được ghi là đang nợ.
+   *
+   * Lưu MỐC THỜI GIAN chứ không phải `boolean`: cùng một cột, biết thêm được đã xét lúc nào.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  reviewedAt?: Date | null;
+
+  /**
    * Nhãn phụ để lọc chéo danh mục, VD ["du-lich-da-lat", "cong-viec"].
    * Một giao dịch chỉ có 1 danh mục nhưng có nhiều tag.
    */

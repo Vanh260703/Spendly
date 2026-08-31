@@ -1,8 +1,9 @@
 'use client';
 
-import { Receipt, Search, Trash2, Users } from 'lucide-react';
+import { HandCoins, Receipt, Search, Trash2, Users } from 'lucide-react';
 import { useState } from 'react';
 import { ContactDetail } from '@/components/friends/ContactDetail';
+import { OweForm } from '@/components/friends/OweForm';
 import { SplitBillForm } from '@/components/friends/SplitBillForm';
 import {
   Button, Card, EmptyState, ErrorState, Input, Modal, Skeleton, cn,
@@ -22,6 +23,7 @@ export default function ContactsPage() {
   const xoa = useDeleteContact();
 
   const [moChiaBill, setMoChiaBill] = useState(false);
+  const [moGhiNo, setMoGhiNo] = useState(false);
   const [dangXem, setDangXem] = useState<Contact | null>(null);
 
   const hoNoToi = (data ?? []).filter((c) => c.balance > 0);
@@ -35,9 +37,18 @@ export default function ContactsPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Danh bạ</h1>
-        <Button onClick={() => setMoChiaBill(true)}>
-          <Receipt size={16} /> Chia bill
-        </Button>
+        {/*
+          Hai nút cho hai chiều nợ, đặt cạnh nhau và nói rõ ai ứng tiền. Trước chỉ có "Chia
+          bill" — chiều "tôi nợ" phải đi vòng qua form đó và khai cả hóa đơn.
+        */}
+        <div className="flex gap-2">
+          <Button onClick={() => setMoChiaBill(true)}>
+            <Receipt size={16} /> Tôi ứng tiền
+          </Button>
+          <Button variant="secondary" onClick={() => setMoGhiNo(true)}>
+            <HandCoins size={16} /> Tôi nợ
+          </Button>
+        </div>
       </div>
 
       {/* Hai con số tổng — thứ người ta mở trang này để xem đầu tiên */}
@@ -75,7 +86,7 @@ export default function ContactsPage() {
           description={
             tim
               ? 'Thử một cái tên khác.'
-              : 'Bấm "Chia bill" để ghi lần trả hộ đầu tiên — gõ tên là người đó tự vào danh bạ.'
+              : 'Bấm "Tôi ứng tiền" hoặc "Tôi nợ" để ghi khoản đầu tiên — gõ tên là người đó tự vào danh bạ.'
           }
         />
       ) : (
@@ -135,8 +146,12 @@ export default function ContactsPage() {
         </div>
       )}
 
-      <Modal open={moChiaBill} onClose={() => setMoChiaBill(false)} title="Chia bill">
+      <Modal open={moChiaBill} onClose={() => setMoChiaBill(false)} title="Tôi ứng tiền cho ai">
         <SplitBillForm onDone={() => setMoChiaBill(false)} />
+      </Modal>
+
+      <Modal open={moGhiNo} onClose={() => setMoGhiNo(false)} title="Ghi khoản tôi nợ">
+        <OweForm onDone={() => setMoGhiNo(false)} />
       </Modal>
 
       <Modal open={!!dangXem} onClose={() => setDangXem(null)} title={dangXem?.name ?? ''}>

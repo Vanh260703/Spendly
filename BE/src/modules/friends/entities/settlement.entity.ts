@@ -1,21 +1,22 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
 import { money } from '../../../common/transformers/money.transformer';
-import { Transaction } from '../../transactions/entities/transaction.entity';
 import { User } from '../../users/entities/user.entity';
 import { Contact } from './contact.entity';
 
 export enum SettlementDirection {
-  /** Họ trả lại tiền cho bạn → giao dịch THU vào danh mục hệ thống */
+  /** Họ trả lại tiền cho bạn → công nợ giảm đi */
   THEY_PAID_ME = 'they_paid_me',
-  /** Bạn trả lại tiền cho họ → giao dịch CHI vào danh mục THẬT */
+  /** Bạn trả lại tiền cho họ → công nợ của bạn giảm đi */
   I_PAID_THEM = 'i_paid_them',
 }
 
 /**
- * MỘT LẦN TẤT TOÁN — trả lại tiền đã mượn/cho mượn.
+ * MỘT LẦN TRẢ NỢ — ghi lại việc tiền đã được trả lại.
  *
- * Khác `SharedExpense` ở chỗ **luôn có tiền di chuyển**, nên luôn sinh đúng một giao dịch.
+ * ⚠️ **KHÔNG tạo `Transaction`.** Trả nợ qua chuyển khoản thì ngân hàng đã báo về rồi; tạo
+ * thêm một dòng nữa là đếm tiền hai lần. Còn trả tiền mặt thì không có gì để ngân hàng báo.
+ * Cả hai trường hợp, bảng này chỉ ghi **công nợ đã dịch chuyển bao nhiêu**.
  *
  * Cho phép trả **từng phần** (nhiều bản ghi cho cùng một người) và trả **dư** (công nợ đổi
  * dấu). Không chặn — đời thật vẫn xảy ra và chặn chỉ làm user phải nói dối dữ liệu.
@@ -56,12 +57,4 @@ export class Settlement extends BaseEntity {
 
   @Column({ type: 'varchar', nullable: true })
   note?: string | null;
-
-  /** Tất toán luôn có tiền di chuyển → luôn có giao dịch, không nullable */
-  @Column('uuid')
-  transactionId: string;
-
-  @ManyToOne(() => Transaction, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'transactionId' })
-  transaction: Transaction;
 }

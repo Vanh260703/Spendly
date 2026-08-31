@@ -1,7 +1,6 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, Unique } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
 import { money } from '../../../common/transformers/money.transformer';
-import { Category } from '../../categories/entities/category.entity';
 import { Transaction } from '../../transactions/entities/transaction.entity';
 import { User } from '../../users/entities/user.entity';
 import { Contact } from './contact.entity';
@@ -9,15 +8,22 @@ import { Contact } from './contact.entity';
 /**
  * MỘT LẦN CHI CHUNG — đi ăn, đi chơi mà một người trả trước cho cả nhóm.
  *
- * Hai chiều, phân biệt bằng `payerContactId`:
- * - `null` → **BẠN** trả → tiền rời ví ngay → sinh tối đa 3 giao dịch
- * - có giá trị → **người đó** trả hộ bạn → tiền chưa rời ví bạn → **KHÔNG** sinh giao dịch nào
+ * ⚠️ **KHÔNG đụng vào bảng `transactions`.** Đó là bản sao nguyên vẹn những gì ngân hàng
+ * báo về; app không được cắt nhỏ, đổi số tiền hay thêm dòng vào đó. Trước đây việc chia bill
+ * tách giao dịch gốc thành nhiều dòng con — nghĩa là sổ ngân hàng trong app không còn khớp
+ * với sao kê thật, và mất luôn khả năng đối chiếu khi có tranh chấp.
  *
- * Bất đối xứng này là chủ ý (SPEC §4.6): ghi giao dịch chi lúc bạn ăn ké mà chưa trả sẽ làm
- * số dư tính ra thấp hơn tiền thật trong ví.
+ * Giờ chia bill chỉ ghi vào ĐÂY. Bảng này trả lời "ai nợ tôi bao nhiêu"; bảng `transactions`
+ * trả lời "ngân hàng đã ghi nhận những gì". Hai câu hỏi khác nhau, hai bảng riêng.
+ *
+ * Hai chiều, phân biệt bằng `payerContactId`:
+ * - `null` → **BẠN** trả (thường gắn với một giao dịch ngân hàng qua `transactionId`)
+ * - có giá trị → **người đó** trả hộ bạn, không có giao dịch nào của bạn cả
  */
 @Entity('shared_expenses')
 @Index(['userId', 'date'])
+// Một giao dịch ngân hàng chỉ được chia MỘT lần — chia hai lần là công nợ nhân đôi
+@Unique(['transactionId'])
 export class SharedExpense extends BaseEntity {
   @Column('uuid')
   userId: string;
@@ -36,6 +42,22 @@ export class SharedExpense extends BaseEntity {
   @JoinColumn({ name: 'payerContactId' })
   payer?: Contact | null;
 
+  /**
+   * Giao dịch ngân hàng tương ứng — **chỉ để tham chiếu, KHÔNG bị sửa gì**.
+   *
+   * `null` khi khoản chi chung không đi qua tài khoản: bạn trả tiền mặt, hoặc người khác
+   * trả hộ bạn.
+   *
+   * `SET NULL` chứ không `CASCADE`: xóa giao dịch không được làm mất công nợ — người ta vẫn
+   * đang nợ bạn thật, dù bản ghi ngân hàng có còn hay không.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  transactionId?: string | null;
+
+  @ManyToOne(() => Transaction, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'transactionId' })
+  transaction?: Transaction | null;
+
   /** Tổng hóa đơn, VD 1000000 */
   @Column({ type: 'bigint', transformer: money })
   totalAmount: number;
@@ -46,67 +68,6 @@ export class SharedExpense extends BaseEntity {
   /** VD "Ăn tối sinh nhật Tuấn" */
   @Column({ type: 'varchar', nullable: true })
   note?: string | null;
-
-  /** Danh mục cho phần bạn THỰC ĂN */
-  @Column('uuid')
-  categoryId: string;
-
-  @ManyToOne(() => Category, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'categoryId' })
-  category: Category;
-
-  /**
-   * Phần bạn MỜI — tiền bạn tiêu thật, không ai trả lại.
-   *
-   * Ràng buộc: `treatAmount ≤ phần của bạn`. Chỉ có nghĩa khi BẠN là người trả.
-   */
-  @Column({ type: 'bigint', transformer: money, default: 0 })
-  treatAmount: number;
-
-  /**
-   * Danh mục cho phần mời — bắt buộc khi `treatAmount > 0`.
-   *
-   * Tách khỏi `categoryId` để AI phân biệt được "ăn nhiều" với "mời nhiều": gộp chung thì
-   * danh mục Ăn uống phình lên vì tiền mời người khác, và AI sẽ khuyên *ăn ít lại* trong khi
-   * vấn đề thật là *mời hơi nhiều*. Hai lời khuyên khác hẳn nhau.
-   */
-  @Column({ type: 'uuid', nullable: true })
-  treatCategoryId?: string | null;
-
-  @ManyToOne(() => Category, { onDelete: 'RESTRICT', nullable: true })
-  @JoinColumn({ name: 'treatCategoryId' })
-  treatCategory?: Category | null;
-
-  /*
-   * Ba giao dịch do bản ghi này sinh ra — chỉ khi BẠN là người trả.
-   *
-   * `RESTRICT`: không cho xóa giao dịch trực tiếp, phải xóa qua `DELETE /shared-expenses/:id`
-   * để cả ba biến mất cùng lúc. Xóa lẻ một cái là số dư lệch vĩnh viễn mà không ai biết.
-   */
-
-  /** Phần bạn thực ăn — vào thống kê */
-  @Column({ type: 'uuid', nullable: true })
-  transactionIdMine?: string | null;
-
-  @ManyToOne(() => Transaction, { onDelete: 'RESTRICT', nullable: true })
-  @JoinColumn({ name: 'transactionIdMine' })
-  transactionMine?: Transaction | null;
-
-  /** Phần bạn mời — vào thống kê */
-  @Column({ type: 'uuid', nullable: true })
-  transactionIdTreat?: string | null;
-
-  @ManyToOne(() => Transaction, { onDelete: 'RESTRICT', nullable: true })
-  @JoinColumn({ name: 'transactionIdTreat' })
-  transactionTreat?: Transaction | null;
-
-  /** Phần cho mượn — danh mục hệ thống, KHÔNG vào thống kê */
-  @Column({ type: 'uuid', nullable: true })
-  transactionIdLent?: string | null;
-
-  @ManyToOne(() => Transaction, { onDelete: 'RESTRICT', nullable: true })
-  @JoinColumn({ name: 'transactionIdLent' })
-  transactionLent?: Transaction | null;
 
   @OneToMany(() => SharedExpenseShare, (s) => s.sharedExpense)
   shares: SharedExpenseShare[];

@@ -2,12 +2,14 @@
 
 import { Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button, Input } from '@/components/ui';
+import { Button, Input, cn } from '@/components/ui';
+import { useSoChuaXet } from '@/hooks/useFinance';
 
 export interface BoLoc {
   q?: string;
   from?: string;
   to?: string;
+  unreviewed?: boolean;
 }
 
 /**
@@ -25,11 +27,14 @@ export function TransactionFilters({ onChange }: { onChange: (b: BoLoc) => void 
   const router = useRouter();
   const params = useSearchParams();
 
+  const { data: chuaXet } = useSoChuaXet();
+
   const q = params.get('q') ?? '';
   const from = params.get('from') ?? '';
   const to = params.get('to') ?? '';
+  const chiChuaXet = params.get('unreviewed') === '1';
 
-  const capNhat = (moi: Partial<BoLoc>) => {
+  const capNhat = (moi: Record<string, string>) => {
     const p = new URLSearchParams(params.toString());
     for (const [k, v] of Object.entries(moi)) {
       if (v) p.set(k, v);
@@ -45,10 +50,11 @@ export function TransactionFilters({ onChange }: { onChange: (b: BoLoc) => void 
       q: (moi.q ?? q) || undefined,
       from: (moi.from ?? from) || undefined,
       to: (moi.to ?? to) || undefined,
+      unreviewed: (moi.unreviewed ?? (chiChuaXet ? '1' : '')) === '1' || undefined,
     });
   };
 
-  const coLoc = !!(q || from || to);
+  const coLoc = !!(q || from || to || chiChuaXet);
 
   return (
     <div className="flex items-center gap-2">
@@ -82,13 +88,39 @@ export function TransactionFilters({ onChange }: { onChange: (b: BoLoc) => void 
         aria-label="Đến ngày"
       />
 
+      {/*
+        Lối tắt tới hàng chờ. Con số bên cạnh là thứ trả lời "còn sót gì không?" — không có
+        nó thì phải tự nhớ, mà tự nhớ chính là chỗ hỏng.
+      */}
+      <button
+        type="button"
+        onClick={() => capNhat({ unreviewed: chiChuaXet ? '' : '1' })}
+        className={cn(
+          'h-11 shrink-0 rounded-xl px-3 text-sm font-medium transition',
+          chiChuaXet ? 'bg-brand text-white' : 'muted surface',
+        )}
+        title="Những khoản chưa xét có phần trả hộ người khác hay không"
+      >
+        Chưa xét
+        {(chuaXet?.count ?? 0) > 0 && (
+          <span
+            className={cn(
+              'ml-1.5 rounded-full px-1.5 py-0.5 text-xs tabular',
+              chiChuaXet ? 'bg-white/25' : 'bg-brand text-white',
+            )}
+          >
+            {chuaXet!.count}
+          </span>
+        )}
+      </button>
+
       {/* Chỉ hiện khi thực sự có gì để xóa — nút mờ thường trực là rác thị giác */}
       {coLoc && (
         <Button
           variant="ghost"
           size="sm"
           className="shrink-0"
-          onClick={() => capNhat({ q: '', from: '', to: '' })}
+          onClick={() => capNhat({ q: '', from: '', to: '', unreviewed: '' })}
           aria-label="Xóa bộ lọc"
           title="Xóa bộ lọc"
         >

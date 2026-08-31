@@ -1,14 +1,14 @@
 'use client';
 
-import { Plus, X } from 'lucide-react';
+import { Check, Plus, Split, UserPlus } from 'lucide-react';
 import { useState } from 'react';
-import { Button, Field, Input, MoneyInput, Select, cn } from '@/components/ui';
+import { Button, Input, MoneyInput, Select, cn } from '@/components/ui';
 import { useContacts, useCreateContact, useCreateSharedExpense } from '@/hooks/useFriends';
 import { formatDate, formatMoney, toDateInputValue } from '@/lib/format';
 import type { Contact, Transaction } from '@/types';
 
 /**
- * Chia đều một số tiền cho `soNguoi` người, **phần lẻ dồn vào NGƯỜI TRẢ**.
+ * Chia đều `tong` cho `soNguoi` người, **phần lẻ dồn vào NGƯỜI TRẢ**.
  *
  * Tiền là số nguyên đồng nên 1.000.000 ÷ 3 không chia hết. Người trả chịu vài đồng lẻ thay
  * vì bắt một người bạn trả 166.667₫ trong khi hai người kia trả 166.666₫.
@@ -19,25 +19,42 @@ export function chiaDeu(tong: number, soNguoi: number): [number, number] {
   return [tong - moiNguoi * (soNguoi - 1), moiNguoi];
 }
 
-interface DongChia {
+/**
+ * Avatar chữ cái đầu — cùng màu với danh bạ để nhận ra nhanh.
+ *
+ * Không có màu (phần của CHÍNH BẠN) thì rơi về `bg-brand`. Dùng lớp Tailwind chứ không
+ * `var(--brand)`: token trong `globals.css` tên là `--color-brand`, viết sai tên biến thì
+ * nền trong suốt mà không có lỗi nào báo.
+ */
+function Avatar({ ten, mau }: { ten: string; mau?: string }) {
+  return (
+    <span
+      className={cn(
+        'flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white',
+        !mau && 'bg-brand',
+      )}
+      style={mau ? { background: mau } : undefined}
+    >
+      {ten.trim().charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+interface Phan {
   /** `null` = phần của CHÍNH BẠN */
   contactId: string | null;
   name: string;
+  color?: string;
   amount: number;
 }
 
 /**
  * Chia một hóa đơn cho bạn bè.
  *
- * Hai chế độ, quyết định bởi việc có truyền `transaction` vào hay không:
- *
- * - **Có `transaction`** — bạn đã trả bằng tài khoản ngân hàng và giao dịch đã về app.
- *   Form **TÁCH** giao dịch đó, không tạo giao dịch mới: ngân hàng đã trừ tiền một lần rồi,
- *   tạo thêm là đếm hai lần và số dư app sẽ thấp hơn thực tế đúng một hóa đơn.
- *   Tổng tiền và ngày lấy từ giao dịch, không cho sửa.
- *
- * - **Không có** — người khác trả hộ bạn. Tiền chưa rời tài khoản nên **không giao dịch nào**
- *   được tạo; phải khai tổng tiền và ngày bằng tay.
+ * - **Có `transaction`** — bạn đã trả bằng tài khoản ngân hàng. Form **TÁCH** giao dịch đó,
+ *   không tạo mới: ngân hàng đã trừ tiền một lần rồi, tạo thêm là đếm hai lần.
+ * - **Không có** — người khác trả hộ bạn. Tiền chưa rời tài khoản nên không giao dịch nào
+ *   được tạo, chỉ ghi công nợ.
  */
 export function SplitBillForm({
   transaction,
@@ -54,223 +71,278 @@ export function SplitBillForm({
 
   const [nguoiTra, setNguoiTra] = useState('');
   const [tong, setTong] = useState<number | ''>(transaction?.amount ?? '');
-  const [ngay, setNgay] = useState(
-    transaction ? transaction.date.slice(0, 10) : toDateInputValue(),
-  );
-  const [note, setNote] = useState(transaction?.note ?? '');
+  const [ngay, setNgay] = useState(transaction ? transaction.date.slice(0, 10) : toDateInputValue());
+  const [note, setNote] = useState('');
   const [tenMoi, setTenMoi] = useState('');
-  const [tuChia, setTuChia] = useState(true);
 
   const soTien = transaction?.amount ?? (Number(tong) || 0);
-  const [khoiTaoNguoiTra] = chiaDeu(soTien, 1);
-  const [dong, setDong] = useState<DongChia[]>([
-    { contactId: null, name: 'Tôi', amount: khoiTaoNguoiTra },
+
+  const [phan, setPhan] = useState<Phan[]>([
+    { contactId: null, name: 'Tôi', amount: 0 },
   ]);
 
-  const tongCacPhan = dong.reduce((t, d) => t + d.amount, 0);
-  const lech = soTien - tongCacPhan;
-  const phanCuaToi = dong.find((d) => d.contactId === null)?.amount ?? 0;
+  const daChia = phan.reduce((t, p) => t + p.amount, 0);
+  const conLai = soTien - daChia;
+  const khop = conLai === 0 && soTien > 0;
 
-  const chiaLai = (t: number, ds: DongChia[]) => {
-    const [phanNguoiTra, moiNguoi] = chiaDeu(t, ds.length);
-    return ds.map((d) => ({
-      ...d,
-      amount: d.contactId === null ? phanNguoiTra : moiNguoi,
-    }));
+  const chiaDeuTatCa = (ds: Phan[] = phan, t: number = soTien) => {
+    const [nguoiTraPhan, moiNguoi] = chiaDeu(t, ds.length);
+    setPhan(ds.map((p) => ({ ...p, amount: p.contactId === null ? nguoiTraPhan : moiNguoi })));
   };
 
-  const doiTong = (v: number | '') => {
-    setTong(v);
-    if (tuChia) setDong((ds) => chiaLai(Number(v) || 0, ds));
+  /**
+   * Sửa phần của một người → phần còn lại **tự cân lại** để tổng luôn bằng hóa đơn.
+   *
+   * - Sửa của người khác → phần của BẠN hứng chênh lệch. Bạn là người ứng tiền, nên phần
+   *   nào họ không gánh thì mặc định bạn gánh — khỏi phải tự trừ nhẩm.
+   * - Sửa phần của chính bạn → chia đều lại cho những người còn lại.
+   *
+   * Nhờ vậy tổng không bao giờ lệch, và thanh trạng thái gần như luôn xanh.
+   */
+  const suaPhan = (contactId: string | null, moi: number) => {
+    setPhan((ds) => {
+      if (contactId !== null) {
+        const khac = ds.map((p) => (p.contactId === contactId ? { ...p, amount: moi } : p));
+        const tongKhac = khac
+          .filter((p) => p.contactId !== null)
+          .reduce((t, p) => t + p.amount, 0);
+        // Kẹp ở 0: phần âm là vô nghĩa, và BE cũng từ chối. Vượt quá thì thanh trạng thái
+        // chuyển đỏ để bạn thấy ngay là đã chia quá tay.
+        return khac.map((p) =>
+          p.contactId === null ? { ...p, amount: Math.max(0, soTien - tongKhac) } : p,
+        );
+      }
+
+      const nguoiKhac = ds.filter((p) => p.contactId !== null);
+      if (!nguoiKhac.length) return ds.map((p) => ({ ...p, amount: moi }));
+
+      const conLaiChoHo = Math.max(0, soTien - moi);
+      const moiNguoi = Math.floor(conLaiChoHo / nguoiKhac.length);
+      // Phần lẻ dồn vào người CUỐI để tổng khớp tuyệt đối
+      const du = conLaiChoHo - moiNguoi * nguoiKhac.length;
+
+      let i = 0;
+      return ds.map((p) => {
+        if (p.contactId === null) return { ...p, amount: moi };
+        i += 1;
+        return { ...p, amount: i === nguoiKhac.length ? moiNguoi + du : moiNguoi };
+      });
+    });
   };
 
-  const themNguoi = (c: Contact) => {
-    if (dong.some((d) => d.contactId === c.id)) return;
-    const ds = [...dong, { contactId: c.id, name: c.name, amount: 0 }];
-    setDong(tuChia ? chiaLai(soTien, ds) : ds);
+  const toggle = (c: Contact) => {
+    const daCo = phan.some((p) => p.contactId === c.id);
+    const ds = daCo
+      ? phan.filter((p) => p.contactId !== c.id)
+      : [...phan, { contactId: c.id, name: c.name, color: c.color, amount: 0 }];
+    chiaDeuTatCa(ds);
   };
 
   /** Gõ tên chưa có trong danh bạ → tạo tại chỗ, không bắt rời màn hình */
   const themTenMoi = () => {
     const ten = tenMoi.trim();
     if (!ten) return;
-    const daCo = (danhBa ?? []).find(
-      (c) => c.name.trim().toLowerCase() === ten.toLowerCase(),
-    );
+    const daCo = (danhBa ?? []).find((c) => c.name.trim().toLowerCase() === ten.toLowerCase());
     if (daCo) {
-      themNguoi(daCo);
+      if (!phan.some((p) => p.contactId === daCo.id)) toggle(daCo);
       setTenMoi('');
       return;
     }
-    taoNguoi.mutate({ name: ten }, {
-      onSuccess: (c) => { themNguoi(c); setTenMoi(''); },
-    });
-  };
-
-  const boNguoi = (contactId: string) => {
-    const ds = dong.filter((d) => d.contactId !== contactId);
-    setDong(tuChia ? chiaLai(soTien, ds) : ds);
-  };
-
-  const suaPhan = (contactId: string | null, amount: number) => {
-    setTuChia(false); // đã sửa tay thì đừng tự chia đè lên nữa
-    setDong((ds) => ds.map((d) => (d.contactId === contactId ? { ...d, amount } : d)));
+    taoNguoi.mutate({ name: ten }, { onSuccess: (c) => { toggle(c); setTenMoi(''); } });
   };
 
   const gui = (e: React.FormEvent) => {
     e.preventDefault();
     tao.mutate(
       {
-        payerContactId: toiTra ? null : nguoiTra,
+        payerContactId: toiTra ? null : nguoiTra || null,
         transactionId: transaction?.id ?? null,
-        // Khi tách giao dịch ngân hàng thì BE lấy số tiền và ngày từ chính giao dịch đó
-        ...(toiTra ? {} : { totalAmount: Number(tong), date: new Date(ngay).toISOString() }),
+        ...(toiTra ? {} : { totalAmount: soTien, date: new Date(ngay).toISOString() }),
         note: note || null,
-        shares: dong.map((d) => ({ contactId: d.contactId, amount: d.amount })),
+        /*
+         * Bỏ phần 0₫ — BE bắt buộc mọi phần phải DƯƠNG. Phần của bạn bằng 0 là trường hợp
+         * thật: bạn trả hộ hoàn toàn mà không ăn miếng nào.
+         */
+        shares: phan
+          .filter((p) => p.amount > 0)
+          .map((p) => ({ contactId: p.contactId, amount: p.amount })),
       },
       { onSuccess: onDone },
     );
   };
 
-  const goiYThem = (danhBa ?? []).filter(
-    (c) => !dong.some((d) => d.contactId === c.id) && c.id !== nguoiTra,
-  );
-
   return (
-    <form onSubmit={gui} className="space-y-4">
+    <form onSubmit={gui} className="space-y-5">
+      {/* ————— Hóa đơn ————— */}
       {toiTra ? (
-        <div className="rounded-xl bg-[var(--surface-2)] p-3">
-          <p className="muted text-xs">Tách giao dịch ngân hàng</p>
-          <p className="tabular text-lg font-semibold">{formatMoney(soTien)}</p>
-          <p className="muted text-xs">
+        <div className="rounded-xl bg-[var(--surface-2)] px-4 py-3 text-center">
+          <p className="tabular text-2xl font-bold">{formatMoney(soTien)}</p>
+          <p className="muted mt-0.5 truncate text-xs">
             {formatDate(transaction!.date)}
             {transaction!.note ? ` · ${transaction!.note}` : ''}
           </p>
           {/*
-            Nói rõ vì sao không cho sửa số tiền: ngân hàng đã trừ đúng ngần này, các phần
-            chia ra chỉ là cách ghi nhận ai chịu bao nhiêu TRONG số đó.
+            Giao dịch ngân hàng KHÔNG bị sửa gì — việc chia chỉ ghi vào sổ công nợ. Nói rõ
+            để bạn không lo sổ ngân hàng bị app cắt gọt.
           */}
-          <p className="muted mt-1.5 text-xs">
-            Số tiền lấy từ ngân hàng nên không sửa được. Các phần bên dưới phải cộng lại
-            đúng bằng con số này.
+          <p className="muted mt-1.5 text-[11px]">
+            Giao dịch giữ nguyên trong sổ ngân hàng · phần chia chỉ ghi vào công nợ
           </p>
         </div>
       ) : (
-        <>
-          <Field label="Ai đã trả?">
-            <Select value={nguoiTra} onChange={(e) => setNguoiTra(e.target.value)} required>
-              <option value="">— Chọn người —</option>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="muted mb-1 block text-xs">Ai đã trả?</span>
+            {/*
+              "Tôi" phải là lựa chọn ĐẦU và mặc định: trả hộ cả nhóm bằng tiền mặt là lý do
+              chính người ta mở form này. Trước đây chỉ liệt kê người trong danh bạ nên không
+              có cách nào khai "tôi ứng tiền".
+            */}
+            <Select value={nguoiTra} onChange={(e) => setNguoiTra(e.target.value)}>
+              <option value="">Tôi</option>
               {(danhBa ?? []).map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </Select>
-          </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Tổng hóa đơn">
-              <MoneyInput value={tong} onChange={doiTong} required />
-            </Field>
-            <Field label="Ngày">
-              <Input type="date" value={ngay} onChange={(e) => setNgay(e.target.value)} required />
-            </Field>
-          </div>
-        </>
+          </label>
+          <label className="block">
+            <span className="muted mb-1 block text-xs">Tổng hóa đơn</span>
+            <MoneyInput
+              value={tong}
+              onChange={(v) => { setTong(v); chiaDeuTatCa(phan, Number(v) || 0); }}
+              required
+            />
+          </label>
+          <label className="col-span-2 block">
+            <span className="muted mb-1 block text-xs">Ngày</span>
+            <Input type="date" value={ngay} onChange={(e) => setNgay(e.target.value)} required />
+          </label>
+        </div>
       )}
 
-      <Field label="Ghi chú">
-        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ăn tối..." />
-      </Field>
+      {/* ————— Bước 1: ai cùng chi ————— */}
+      <div>
+        <p className="mb-2 text-sm font-medium">Ai cùng chi khoản này?</p>
 
-      {/* ————— Chia phần ————— */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Chia cho ai</span>
-          {!tuChia && (
-            <button
-              type="button"
-              className="text-xs text-brand"
-              onClick={() => { setTuChia(true); setDong((ds) => chiaLai(soTien, ds)); }}
-            >
-              Chia đều lại
-            </button>
+        {/*
+          Bấm để bật/tắt từng người — một thao tác cho cả thêm lẫn bỏ. Trước đây thêm bằng
+          chip còn bỏ bằng dấu ✕ ở dòng khác, hai chỗ cho cùng một việc.
+        */}
+        <div className="flex flex-wrap gap-2">
+          {(danhBa ?? []).map((c) => {
+            const chon = phan.some((p) => p.contactId === c.id);
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => toggle(c)}
+                className={cn(
+                  'flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-sm transition',
+                  chon ? 'bg-brand text-white' : 'bg-[var(--surface-2)]',
+                )}
+              >
+                <Avatar ten={c.name} mau={chon ? 'rgba(255,255,255,.25)' : c.color} />
+                {c.name}
+                {chon && <Check size={14} />}
+              </button>
+            );
+          })}
+
+          {!danhBa?.length && (
+            <p className="muted text-sm">Chưa có ai trong danh bạ — gõ tên bên dưới để thêm.</p>
           )}
         </div>
 
-        {dong.map((d) => (
-          <div key={d.contactId ?? 'toi'} className="flex items-center gap-2">
-            <span className="w-24 shrink-0 truncate text-sm">{d.name}</span>
-            <MoneyInput
-              value={d.amount}
-              onChange={(v) => suaPhan(d.contactId, Number(v) || 0)}
-              className="flex-1"
-            />
-            {d.contactId && (
-              <button
-                type="button"
-                onClick={() => boNguoi(d.contactId!)}
-                className="muted shrink-0 p-1"
-                aria-label={`Bỏ ${d.name}`}
-              >
-                <X size={16} />
-              </button>
-            )}
-          </div>
-        ))}
-
-        {/*
-          Combobox: chọn từ danh bạ HOẶC gõ tên mới tạo tại chỗ. Bắt vào Danh bạ tạo người
-          trước rồi mới ghi được bữa ăn thì lần đầu dùng — danh bạ trống — sẽ kẹt cứng.
-        */}
-        <div className="flex gap-2">
+        <div className="mt-2 flex gap-2">
           <Input
             value={tenMoi}
             onChange={(e) => setTenMoi(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); themTenMoi(); }
             }}
-            placeholder="Gõ tên để thêm người..."
+            placeholder="Gõ tên người mới…"
           />
-          <Button type="button" variant="secondary" onClick={themTenMoi} loading={taoNguoi.isPending}>
-            <Plus size={16} />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={themTenMoi}
+            loading={taoNguoi.isPending}
+            aria-label="Thêm người"
+          >
+            <UserPlus size={16} />
           </Button>
         </div>
+      </div>
 
-        {goiYThem.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {goiYThem.slice(0, 8).map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => themNguoi(c)}
-                className="rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-xs transition hover:opacity-80"
-              >
-                + {c.name}
-              </button>
+      {/* ————— Bước 2: chia bao nhiêu ————— */}
+      {phan.length > 1 && (
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-medium">Mỗi người bao nhiêu?</p>
+            <Button type="button" variant="secondary" size="sm" onClick={() => chiaDeuTatCa()}>
+              <Split size={14} /> Chia đều
+            </Button>
+          </div>
+
+          <div className="space-y-1.5">
+            {phan.map((p) => (
+              <div key={p.contactId ?? 'toi'} className="flex items-center gap-2">
+                <Avatar ten={p.name} mau={p.color} />
+                <span className="w-20 shrink-0 truncate text-sm">{p.name}</span>
+                <MoneyInput
+                  value={p.amount}
+                  onChange={(v) => suaPhan(p.contactId, Number(v) || 0)}
+                  className="flex-1"
+                />
+              </div>
             ))}
           </div>
-        )}
 
-        {/*
-          Bất biến `Σ phần = hóa đơn` — BE từ chối nếu lệch. Hiện ngay tại chỗ để sửa được,
-          thay vì bấm Lưu rồi mới nhận lỗi.
-        */}
-        {lech !== 0 && soTien > 0 && (
-          <p className={cn('text-sm', 'text-exceeded')}>
-            {lech > 0 ? 'Còn thiếu' : 'Thừa'} {formatMoney(Math.abs(lech))} so với hóa đơn
+          {/*
+            Thanh trạng thái: BE từ chối nếu tổng các phần lệch hóa đơn, nên phải thấy được
+            ngay tại chỗ mà sửa, thay vì bấm Lưu rồi mới nhận lỗi.
+          */}
+          <p
+            className={cn(
+              'mt-2 rounded-lg px-3 py-2 text-sm',
+              khop ? 'bg-ok/10 text-ok' : 'bg-exceeded/10 text-exceeded',
+            )}
+          >
+            {khop
+              ? 'Khớp đúng hóa đơn'
+              : conLai > 0
+                ? `Còn thiếu ${formatMoney(conLai)}`
+                : `Thừa ${formatMoney(-conLai)}`}
           </p>
-        )}
-      </div>
+        </div>
+      )}
+
+      <Input
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Ghi chú (VD: ăn tối sinh nhật)"
+      />
 
       {!toiTra && (
         <p className="muted text-xs">
-          Người khác trả nên tiền chưa rời tài khoản bạn — sẽ không có giao dịch nào được
-          tạo, chỉ ghi lại là bạn đang nợ họ. Khoản chi chỉ xuất hiện khi bạn trả lại.
+          {nguoiTra
+            ? 'Người khác trả nên tiền chưa rời tài khoản bạn — chỉ ghi lại là bạn đang nợ họ.'
+            : 'Bạn ứng tiền mặt — chỉ ghi công nợ, không tạo giao dịch nào.'}
         </p>
       )}
 
-      <div className="flex gap-2 pt-1">
-        <Button type="submit" loading={tao.isPending} className="flex-1">Lưu</Button>
-        <Button type="button" variant="ghost" onClick={onDone}>Hủy</Button>
+      <div className="flex gap-2">
+        <Button
+          type="submit"
+          loading={tao.isPending}
+          disabled={!khop || phan.length < 2}
+          className="flex-1"
+        >
+          <Plus size={16} /> Lưu
+        </Button>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          Hủy
+        </Button>
       </div>
     </form>
   );

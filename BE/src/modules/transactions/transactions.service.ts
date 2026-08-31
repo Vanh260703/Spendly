@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { TZDate } from '@date-fns/tz';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { RedisKeys, RedisService } from '../../shared/redis';
 import { SYSTEM_CATEGORY } from '../categories/default-categories';
 import {
@@ -64,6 +64,7 @@ export class TransactionsService {
     // Nới `yyyy-mm-dd` thành trọn ngày theo múi giờ người dùng — xem `bienNgay()`
     if (query.from) qb.andWhere('t.date >= :from', { from: this.bienNgay(query.from, 'dau') });
     if (query.to) qb.andWhere('t.date <= :to', { to: this.bienNgay(query.to, 'cuoi') });
+    if (query.unreviewed) qb.andWhere('t.reviewedAt IS NULL');
     if (query.type) qb.andWhere('t.type = :type', { type: query.type });
     if (query.categoryId)
       qb.andWhere('t.categoryId = :categoryId', { categoryId: query.categoryId });
@@ -152,6 +153,11 @@ export class TransactionsService {
     };
   }
 
+  /** Bao nhiêu khoản chưa xét — giao diện cần con số này mà không muốn tải cả danh sách */
+  async demChuaXet(userId: string): Promise<number> {
+    return this.repo.count({ where: { userId, reviewedAt: IsNull() } });
+  }
+
   // ————————————————————— Ghi —————————————————————
 
 
@@ -167,7 +173,14 @@ export class TransactionsService {
       await this.layDanhMucHopLe(userId, dto.categoryId, tx.type);
     }
 
-    await this.repo.update({ id, userId }, dto);
+    // `reviewed` là cờ ở API nhưng là MỐC THỜI GIAN ở DB — đổi ngay tại đây để chỗ khác
+    // không phải biết hai cách gọi cho cùng một thứ
+    const { reviewed, ...conLai } = dto;
+    if (reviewed !== undefined) {
+      Object.assign(conLai, { reviewedAt: reviewed ? new Date() : null });
+    }
+
+    await this.repo.update({ id, userId }, conLai);
     await this.xoaCacheThongKe(userId);
     return this.findOne(userId, id);
   }
