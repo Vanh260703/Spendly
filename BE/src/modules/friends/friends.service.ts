@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
-import { RedisKeys, RedisService } from '../../shared/redis';
 import { SYSTEM_CATEGORY } from '../categories/default-categories';
 import { Category, CategoryType } from '../categories/entities/category.entity';
 import { Transaction, TxType } from '../transactions/entities/transaction.entity';
@@ -39,7 +38,6 @@ export class FriendsService {
     @InjectRepository(Category) private readonly categories: Repository<Category>,
     @InjectRepository(BankAccount) private readonly bankAccounts: Repository<BankAccount>,
     private readonly dataSource: DataSource,
-    private readonly redis: RedisService,
   ) {}
 
   // ═══════════════════════ Công nợ — MỘT chỗ duy nhất ═══════════════════════
@@ -190,6 +188,7 @@ export class FriendsService {
     }
 
     if (dto.phone !== undefined) contact.phone = dto.phone;
+    if (dto.qrImage !== undefined) contact.qrImage = dto.qrImage;
     if (dto.note !== undefined) contact.note = dto.note;
     if (dto.color !== undefined) contact.color = dto.color;
     if (dto.isArchived !== undefined) contact.isArchived = dto.isArchived;
@@ -267,7 +266,11 @@ export class FriendsService {
       })),
     ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
-    return { contact: this.toContactDto(contact, congNo), history: lichSu };
+    return {
+      // Chỉ chi tiết mới kèm ảnh QR — danh sách thì không, xem giải thích ở entity
+      contact: { ...this.toContactDto(contact, congNo), qrImage: contact.qrImage ?? null },
+      history: lichSu,
+    };
   }
 
   // ═══════════════════════ Chia bill ═══════════════════════
@@ -341,8 +344,6 @@ export class FriendsService {
 
       return expense;
     });
-
-    await this.xoaCacheThongKe(userId);
     return this.getSharedExpense(userId, saved.id);
   }
 
@@ -414,8 +415,6 @@ export class FriendsService {
         await em.update(Transaction, { id: e.transactionId }, { reviewedAt: null });
       }
     });
-
-    await this.xoaCacheThongKe(userId);
   }
 
   // ═══════════════════════ Tất toán ═══════════════════════
@@ -443,8 +442,6 @@ export class FriendsService {
         note: dto.note ?? null,
       }),
     );
-
-    await this.xoaCacheThongKe(userId);
     return saved;
   }
 
@@ -454,7 +451,6 @@ export class FriendsService {
 
     // Không có giao dịch nào để xóa kèm — việc ghi nợ vốn không tạo giao dịch
     await this.settlements.remove(s);
-    await this.xoaCacheThongKe(userId);
   }
 
   // ═══════════════════════ Dùng cho module khác ═══════════════════════
@@ -675,8 +671,4 @@ export class FriendsService {
     };
   }
 
-  /** Giao dịch mới sinh làm sai số liệu đã cache — phải xóa ngay */
-  private async xoaCacheThongKe(userId: string): Promise<void> {
-    await this.redis.delByPrefix(RedisKeys.statsPrefix(userId));
-  }
 }

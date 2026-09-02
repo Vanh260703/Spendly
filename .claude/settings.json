@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s \"http://localhost:3001/api/v1/stats/summary?from=2026-08-01&to=2026-08-31\")",
+      "Bash(curl -s -o /dev/null -w \"  FE → %{http_code}\\\\n\" http://localhost:3000/transactions/)",
+      "Bash(curl -s \"http://localhost:3001/api/v1/transactions?limit=50\")",
+      "Bash(curl -s \"http://localhost:3001/api/v1/transactions?limit=30\")",
+      "Bash(xargs kill)",
+      "Bash(curl -s -o /dev/null -w \"  /contacts/ → %{http_code}\\\\n\" http://localhost:3000/contacts/)",
+      "Bash(xargs -I{} curl -s \"http://localhost:3001/api/v1/contacts/{}\")"
     ]
   }
 }

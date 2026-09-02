@@ -6,7 +6,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { TZDate } from '@date-fns/tz';
 import { IsNull, Repository } from 'typeorm';
-import { RedisKeys, RedisService } from '../../shared/redis';
 import { SYSTEM_CATEGORY } from '../categories/default-categories';
 import {
   Category,
@@ -41,7 +40,6 @@ export class TransactionsService {
     private readonly categories: Repository<Category>,
     @InjectRepository(BankAccount)
     private readonly bankAccounts: Repository<BankAccount>,
-    private readonly redis: RedisService,
   ) {}
 
   // ————————————————————— Đọc —————————————————————
@@ -97,9 +95,45 @@ export class TransactionsService {
     const last = items.at(-1);
 
     return {
-      items,
+      items: await this.ganThongTinChia(items),
       nextCursor: coTrangSau && last ? encodeCursor(last.date, last.id) : null,
     };
+  }
+
+  /**
+   * Gắn thông tin "đã chia cho ai" vào từng giao dịch.
+   *
+   * Truy vấn RIÊNG một lần cho cả trang thay vì `JOIN` vào query chính: chia bill có nhiều
+   * người nên join sẽ nhân bản mỗi giao dịch thành N dòng, và phân trang cursor đếm nhầm
+   * ngay — `take(limit + 1)` sẽ cắt giữa chừng một giao dịch.
+   */
+  private async ganThongTinChia(items: Transaction[]): Promise<Transaction[]> {
+    if (!items.length) return items;
+
+    const rows = await this.repo.manager.query<
+      { transactionId: string; id: string; note: string | null; name: string; amount: string }[]
+    >(
+      `
+      SELECT e."transactionId", e.id, e.note,
+             COALESCE(c.name, 'Tôi') AS name, s.amount
+      FROM shared_expenses e
+      JOIN shared_expense_shares s ON s."sharedExpenseId" = e.id
+      LEFT JOIN contacts c ON c.id = s."contactId"
+      WHERE e."transactionId" = ANY($1)
+      ORDER BY s."contactId" NULLS FIRST
+      `,
+      [items.map((t) => t.id)],
+    );
+
+    const theoTx = new Map<string, { id: string; note: string | null; shares: { name: string; amount: number }[] }>();
+    for (const r of rows) {
+      const g = theoTx.get(r.transactionId) ?? { id: r.id, note: r.note, shares: [] };
+      // ⚠️ `amount` qua raw query là CHUỖI — `transformer: money` không áp dụng
+      g.shares.push({ name: r.name, amount: Number(r.amount) });
+      theoTx.set(r.transactionId, g);
+    }
+
+    return items.map((t) => Object.assign(t, { split: theoTx.get(t.id) ?? null }));
   }
 
   async findOne(userId: string, id: string): Promise<Transaction> {
@@ -181,14 +215,12 @@ export class TransactionsService {
     }
 
     await this.repo.update({ id, userId }, conLai);
-    await this.xoaCacheThongKe(userId);
     return this.findOne(userId, id);
   }
 
   async remove(userId: string, id: string): Promise<void> {
     await this.findOne(userId, id); // ném 404 nếu không phải của user này
     await this.repo.delete({ id, userId });
-    await this.xoaCacheThongKe(userId);
   }
 
   /**
@@ -257,8 +289,4 @@ export class TransactionsService {
       : new Date(new TZDate(y, m - 1, d, 23, 59, 59, 999, tz).getTime());
   }
 
-  /** Mọi thay đổi giao dịch đều làm sai số liệu đã cache — phải xóa ngay */
-  private async xoaCacheThongKe(userId: string): Promise<void> {
-    await this.redis.delByPrefix(RedisKeys.statsPrefix(userId));
-  }
 }

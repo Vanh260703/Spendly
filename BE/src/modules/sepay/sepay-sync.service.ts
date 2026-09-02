@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { RedisKeys, RedisService } from '../../shared/redis';
 import { BankAccount } from '../bank-accounts/entities/bank-account.entity';
 import { SYSTEM_CATEGORY } from '../categories/default-categories';
 import { Category, CategoryType } from '../categories/entities/category.entity';
@@ -54,7 +53,6 @@ export class SepaySyncService {
     @InjectRepository(Category) private readonly categories: Repository<Category>,
     private readonly api: SepayApiClient,
     private readonly dataSource: DataSource,
-    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -172,10 +170,6 @@ export class SepaySyncService {
     } else {
       // Không có gì mới nhưng vẫn ghi nhận là đã hỏi — để giao diện không báo "im lặng lâu"
       await this.accounts.update({ id: acc.id }, { lastSyncedAt: new Date() });
-    }
-
-    if (moi > 0) {
-      await this.redis.delByPrefix(RedisKeys.statsPrefix(acc.userId));
     }
     return { moi, daCo };
   }

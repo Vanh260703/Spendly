@@ -16,7 +16,6 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
 import { UsersModule } from './modules/users/users.module';
 import { BankAccountsModule } from './modules/bank-accounts/bank-accounts.module';
 import { SingleUserGuard } from './common/guards/single-user.guard';
-import { RedisModule } from './shared/redis';
 
 @Module({
   imports: [
@@ -26,7 +25,6 @@ import { RedisModule } from './shared/redis';
       validate: validateEnv,
     }),
     TypeOrmModule.forRoot(dataSourceOptions),
-    RedisModule,
     // Cron chốt kỳ ngân sách hằng ngày
     ScheduleModule.forRoot(),
 

@@ -52,6 +52,20 @@ export class Contact extends BaseEntity {
   color: string;
 
   /**
+   * Ảnh QR chuyển khoản của người này, lưu dạng **data URI base64** ngay trong DB.
+   *
+   * Vì sao không dùng dịch vụ lưu ảnh ngoài: danh bạ chỉ vài người, mỗi ảnh vài chục KB.
+   * Đổi lấy một tài khoản cloud, một khóa API và một điểm hỏng nữa để tiết kiệm vài trăm KB
+   * là lỗ. Nằm trong DB thì nó tự đi theo `docker/backup.sh`, không có chuyện khôi phục
+   * xong ảnh mất hết.
+   *
+   * ⚠️ **Không trả trường này trong danh sách danh bạ** — vài chục KB nhân với số người,
+   * gửi lại mỗi lần mở trang. Chỉ trả ở endpoint chi tiết.
+   */
+  @Column({ type: 'text', nullable: true })
+  qrImage?: string | null;
+
+  /**
    * Ẩn khỏi ô chọn người nhưng GIỮ nguyên lịch sử.
    *
    * Dùng cho người không còn qua lại nữa. Xóa hẳn bị chặn khi công nợ khác 0.

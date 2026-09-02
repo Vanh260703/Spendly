@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import { RedisKeys, RedisService } from '../../shared/redis';
 import { Transaction } from '../transactions/entities/transaction.entity';
 import { DEFAULT_CATEGORIES } from './default-categories';
 import {
@@ -20,7 +19,6 @@ export class CategoriesService {
   constructor(
     @InjectRepository(Category)
     private readonly repo: Repository<Category>,
-    private readonly redis: RedisService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -85,7 +83,6 @@ export class CategoriesService {
 
     await this.repo.update({ id, userId }, dto);
     // Tên/màu danh mục nằm trong payload thống kê đã cache
-    await this.redis.delByPrefix(RedisKeys.statsPrefix(userId));
     return this.findOne(userId, id);
   }
 
@@ -132,8 +129,6 @@ export class CategoriesService {
       await manager.delete(Category, { id, userId });
       return res.affected ?? 0;
     });
-
-    await this.redis.delByPrefix(RedisKeys.statsPrefix(userId));
     return { movedTransactions: moved };
   }
 }

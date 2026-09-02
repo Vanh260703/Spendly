@@ -1,6 +1,7 @@
 'use client';
 
-import { HandCoins, Trash2 } from 'lucide-react';
+import { HandCoins, QrCode, Receipt, Trash2 } from 'lucide-react';
+import { QrUpload } from '@/components/friends/QrUpload';
 import { useState } from 'react';
 import {
   Button, EmptyState, ErrorState, Field, Input, MoneyInput, Modal, Skeleton, cn,
@@ -23,6 +24,7 @@ export function ContactDetail({ contactId, onClose }: { contactId: string; onClo
   const tatToan = useCreateSettlement();
   const xoaBill = useDeleteSharedExpense();
 
+  const [tab, setTab] = useState<'congno' | 'qr'>('congno');
   const [moTraNo, setMoTraNo] = useState(false);
   const [soTien, setSoTien] = useState<number | ''>('');
   const [ngay, setNgay] = useState(toDateInputValue());
@@ -66,6 +68,37 @@ export function ContactDetail({ contactId, onClose }: { contactId: string; onClo
 
   return (
     <div className="space-y-4">
+      {/*
+        Hai việc rất khác nhau với cùng một người: xem nợ bao nhiêu, và quét QR để chuyển
+        tiền. Gộp một màn hình thì lúc cần quét phải cuộn qua bảng lịch sử, mà quét QR là
+        việc làm vội — đang mở app ở quán, tay kia cầm điện thoại người ta.
+      */}
+      <div className="flex rounded-xl bg-[var(--surface-2)] p-1">
+        {[
+          { key: 'congno' as const, nhan: 'Công nợ', Icon: Receipt },
+          { key: 'qr' as const, nhan: 'Mã QR', Icon: QrCode },
+        ].map(({ key, nhan, Icon }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-sm font-medium transition',
+              tab === key ? 'bg-brand text-white' : 'muted',
+            )}
+          >
+            <Icon size={15} /> {nhan}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'qr' ? (
+        <>
+          <QrUpload contactId={contactId} qrImage={contact.qrImage} ten={contact.name} />
+          <Button variant="ghost" className="w-full" onClick={onClose}>Đóng</Button>
+        </>
+      ) : (
+        <>
       <div className="rounded-xl bg-[var(--surface-2)] p-4 text-center">
         <p className={cn('text-lg font-semibold', mo.lop)}>{mo.text}</p>
       </div>
@@ -158,6 +191,9 @@ export function ContactDetail({ contactId, onClose }: { contactId: string; onClo
             </tbody>
           </table>
         </div>
+      )}
+
+        </>
       )}
 
       <Modal

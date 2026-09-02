@@ -7,7 +7,7 @@
 #
 # Web:  http://localhost:3000     API: http://localhost:3001/api/v1
 #
-# ⚠️ Cổng Postgres/Redis cố ý KHÔNG mở ra máy thật (5432/6379 đang bị bản Homebrew chiếm).
+# ⚠️ Cổng Postgres cố ý KHÔNG mở ra máy thật (5432 đang bị bản Homebrew chiếm).
 # Cần truy cập từ ngoài thì bỏ comment phần `ports` — nhớ đổi sang cổng khác.
 
 services:
@@ -31,15 +31,6 @@ services:
       timeout: 3s
       retries: 20
 
-  redis:
-    image: redis:7-alpine
-    # Redis ở đây là CACHE, mất dữ liệu không sao (SPEC §7) — nên không gắn volume.
-    # ports: ['6380:6379']
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 3s
-      timeout: 3s
-      retries: 20
 
   be:
     build:
@@ -55,8 +46,6 @@ services:
       DB_USER: spendly
       DB_PASSWORD: spendly
       DB_NAME: spendly
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
       PORT: 3001
       CORS_ORIGIN: http://localhost:3000
       # BANK_ACCOUNT_NUMBER / BANK_NAME / TIMEZONE / MONTH_START_DAY nạp từ BE/.env qua
@@ -65,7 +54,6 @@ services:
       - '3001:3001'
     depends_on:
       postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
     restart: unless-stopped
 
   fe:

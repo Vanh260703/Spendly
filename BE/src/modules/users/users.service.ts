@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import { RedisKeys, RedisService } from '../../shared/redis';
 import { BankAccount } from '../bank-accounts/entities/bank-account.entity';
 import { UserProfileDto, toUserProfile } from './dto/user-profile.dto';
 import { User } from './entities/user.entity';
@@ -16,7 +15,6 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly repo: Repository<User>,
-    private readonly redis: RedisService,
     private readonly dataSource: DataSource,
   ) {}
 

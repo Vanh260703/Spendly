@@ -9,7 +9,6 @@ import {
   resolvePeriod,
   shiftRange,
 } from '../../common/utils/period';
-import { RedisKeys, RedisService, RedisTtl } from '../../shared/redis';
 import { SYSTEM_CATEGORY } from '../categories/default-categories';
 import { FriendsService } from '../friends/friends.service';
 import { Transaction, TxType } from '../transactions/entities/transaction.entity';
@@ -26,7 +25,6 @@ export class StatsService {
     private readonly users: Repository<User>,
     private readonly transactions: TransactionsService,
     private readonly friends: FriendsService,
-    private readonly redis: RedisService,
   ) {}
 
   // ————————————————————— Số dư —————————————————————
@@ -63,68 +61,62 @@ export class StatsService {
   async getSummary(userId: string, query: RangeQuery) {
     const { range, kind } = await this.giaiMaKhoang(userId, query);
 
-    return this.redis.remember(
-      RedisKeys.stats(userId, 'summary', rangeKey(range)),
-      RedisTtl.STATS,
-      async () => {
-        const [hienTai, kyTruoc, ba, choMuon, traLai] = await Promise.all([
-          this.tongTheoLoai(userId, range),
-          this.tongTheoLoai(userId, shiftRange(range, 1, kind)),
-          Promise.all(
-            [1, 2, 3].map((n) => this.tongTheoLoai(userId, shiftRange(range, n, kind))),
-          ),
-          this.friends.tongChoMuonTrongKy(userId, range.start, range.end),
-          this.friends.tongTraLaiTrongKy(userId, range.start, range.end),
-        ]);
+    const [hienTai, kyTruoc, ba, choMuon, traLai] = await Promise.all([
+      this.tongTheoLoai(userId, range),
+      this.tongTheoLoai(userId, shiftRange(range, 1, kind)),
+      Promise.all(
+        [1, 2, 3].map((n) => this.tongTheoLoai(userId, shiftRange(range, n, kind))),
+      ),
+      this.friends.tongChoMuonTrongKy(userId, range.start, range.end),
+      this.friends.tongTraLaiTrongKy(userId, range.start, range.end),
+    ]);
 
-        /*
-         * ⚠️ Trừ phần CHO MƯỢN ra khỏi tổng chi.
-         *
-         * `transactions` giữ nguyên con số ngân hàng báo (1.000.000₫ cho bữa ăn 4 người),
-         * nên nếu cộng thẳng thì tổng chi tính cả 750.000₫ mà bạn bè sẽ trả lại — bạn nhìn
-         * vào sẽ tưởng mình tiêu gấp mấy lần thực tế.
-         *
-         * Trước đây việc này do một danh mục hệ thống lo, nhưng nó đòi phải cắt nhỏ giao
-         * dịch ngân hàng. Trừ ở tầng thống kê thì sổ ngân hàng còn nguyên vẹn.
-         */
-        const tongChi = Math.max(0, hienTai.expense - choMuon);
+    /*
+     * ⚠️ Trừ phần CHO MƯỢN ra khỏi tổng chi.
+     *
+     * `transactions` giữ nguyên con số ngân hàng báo (1.000.000₫ cho bữa ăn 4 người),
+     * nên nếu cộng thẳng thì tổng chi tính cả 750.000₫ mà bạn bè sẽ trả lại — bạn nhìn
+     * vào sẽ tưởng mình tiêu gấp mấy lần thực tế.
+     *
+     * Trước đây việc này do một danh mục hệ thống lo, nhưng nó đòi phải cắt nhỏ giao
+     * dịch ngân hàng. Trừ ở tầng thống kê thì sổ ngân hàng còn nguyên vẹn.
+     */
+    const tongChi = Math.max(0, hienTai.expense - choMuon);
 
-        /*
-         * ⚠️ Trừ tiền TRẢ LẠI ra khỏi thu nhập — đối xứng với việc trừ tiền cho mượn khỏi
-         * chi tiêu.
-         *
-         * Bạn bè chuyển khoản trả nợ thì ngân hàng báo về như một khoản THU, nhưng đó là
-         * tiền của chính bạn quay về. Không trừ thì mỗi lần được trả nợ, "thu nhập" lại
-         * phồng lên và con số chênh lệch thu-chi sai theo cả hai hướng.
-         */
-        const tongThu = Math.max(0, hienTai.income - traLai);
-        const tbBaKy = ba.reduce((s, k) => s + k.expense, 0) / 3;
+    /*
+     * ⚠️ Trừ tiền TRẢ LẠI ra khỏi thu nhập — đối xứng với việc trừ tiền cho mượn khỏi
+     * chi tiêu.
+     *
+     * Bạn bè chuyển khoản trả nợ thì ngân hàng báo về như một khoản THU, nhưng đó là
+     * tiền của chính bạn quay về. Không trừ thì mỗi lần được trả nợ, "thu nhập" lại
+     * phồng lên và con số chênh lệch thu-chi sai theo cả hai hướng.
+     */
+    const tongThu = Math.max(0, hienTai.income - traLai);
+    const tbBaKy = ba.reduce((s, k) => s + k.expense, 0) / 3;
 
-        return {
-          from: range.start,
-          to: range.end,
-          income: tongThu,
-          /** Tổng ngân hàng cộng vào, TRƯỚC khi bỏ phần trả lại — để đối chiếu sao kê */
-          incomeGross: hienTai.income,
-          /** Phần bạn bè trả lại trong kỳ — tiền của bạn quay về, không phải thu nhập */
-          repaidInPeriod: traLai,
-          expense: tongChi,
-          /** Tổng ngân hàng trừ, TRƯỚC khi bỏ phần cho mượn — để đối chiếu với sao kê */
-          expenseGross: hienTai.expense,
-          /** Phần đã ứng cho người khác trong kỳ, sẽ được trả lại */
-          lentInPeriod: choMuon,
-          net: tongThu - tongChi,
-          comparison: {
-            previousPeriodExpense: kyTruoc.expense,
-            changePercent:
-              kyTruoc.expense > 0
-                ? Number(((tongChi - kyTruoc.expense) / kyTruoc.expense).toFixed(4))
-                : null,
-            avg3PeriodsExpense: Math.round(tbBaKy),
-          },
-        };
+    return {
+      from: range.start,
+      to: range.end,
+      income: tongThu,
+      /** Tổng ngân hàng cộng vào, TRƯỚC khi bỏ phần trả lại — để đối chiếu sao kê */
+      incomeGross: hienTai.income,
+      /** Phần bạn bè trả lại trong kỳ — tiền của bạn quay về, không phải thu nhập */
+      repaidInPeriod: traLai,
+      expense: tongChi,
+      /** Tổng ngân hàng trừ, TRƯỚC khi bỏ phần cho mượn — để đối chiếu với sao kê */
+      expenseGross: hienTai.expense,
+      /** Phần đã ứng cho người khác trong kỳ, sẽ được trả lại */
+      lentInPeriod: choMuon,
+      net: tongThu - tongChi,
+      comparison: {
+        previousPeriodExpense: kyTruoc.expense,
+        changePercent:
+          kyTruoc.expense > 0
+            ? Number(((tongChi - kyTruoc.expense) / kyTruoc.expense).toFixed(4))
+            : null,
+        avg3PeriodsExpense: Math.round(tbBaKy),
       },
-    );
+    };
   }
 
   // ————————————————————— Theo danh mục —————————————————————
@@ -138,56 +130,50 @@ export class StatsService {
   async getByCategory(userId: string, query: RangeQuery & { type: TxType }) {
     const { range, kind } = await this.giaiMaKhoang(userId, query);
 
-    return this.redis.remember(
-      RedisKeys.stats(userId, `by-category:${query.type}`, rangeKey(range)),
-      RedisTtl.STATS,
-      async () => {
-        const rows = await this.baseQuery(userId, range, true)
-          .select('c.id', 'id')
-          .addSelect('c.name', 'name')
-          .addSelect('c.icon', 'icon')
-          .addSelect('c.color', 'color')
-          .addSelect('SUM(t.amount)', 'total')
-          .addSelect('COUNT(*)', 'count')
-          .addSelect('AVG(t.amount)', 'average')
-          .andWhere('t.type = :type', { type: query.type })
-          .groupBy('c.id')
-          .addGroupBy('c.name')
-          .addGroupBy('c.icon')
-          .addGroupBy('c.color')
-          .orderBy('SUM(t.amount)', 'DESC')
-          .getRawMany<Record<string, string>>();
+    const rows = await this.baseQuery(userId, range, true)
+      .select('c.id', 'id')
+      .addSelect('c.name', 'name')
+      .addSelect('c.icon', 'icon')
+      .addSelect('c.color', 'color')
+      .addSelect('SUM(t.amount)', 'total')
+      .addSelect('COUNT(*)', 'count')
+      .addSelect('AVG(t.amount)', 'average')
+      .andWhere('t.type = :type', { type: query.type })
+      .groupBy('c.id')
+      .addGroupBy('c.name')
+      .addGroupBy('c.icon')
+      .addGroupBy('c.color')
+      .orderBy('SUM(t.amount)', 'DESC')
+      .getRawMany<Record<string, string>>();
 
-        // Trung bình 3 kỳ trước, theo TỪNG danh mục — để biết khoản này đang tăng hay
-        // chỉ là thói quen cố hữu
-        const truoc = await this.tongTheoDanhMucNhieuKy(userId, range, kind, query.type, 3);
+    // Trung bình 3 kỳ trước, theo TỪNG danh mục — để biết khoản này đang tăng hay
+    // chỉ là thói quen cố hữu
+    const truoc = await this.tongTheoDanhMucNhieuKy(userId, range, kind, query.type, 3);
 
-        const { income, expense } = await this.tongTheoLoai(userId, range);
-        const mauSo = query.type === TxType.EXPENSE ? expense : income;
+    const { income, expense } = await this.tongTheoLoai(userId, range);
+    const mauSo = query.type === TxType.EXPENSE ? expense : income;
 
-        return rows.map((r) => {
-          const total = Number(r.total);
-          const tbTruoc = truoc.get(r.id) ?? 0;
+    return rows.map((r) => {
+      const total = Number(r.total);
+      const tbTruoc = truoc.get(r.id) ?? 0;
 
-          return {
-            category: {
-              id: r.id,
-              name: r.name,
-              icon: r.icon,
-              color: r.color,
-            },
-            total,
-            count: Number(r.count),
-            average: Math.round(Number(r.average)),
-            percentOfExpense: mauSo > 0 ? Number((total / mauSo).toFixed(4)) : 0,
-            percentOfIncome: income > 0 ? Number((total / income).toFixed(4)) : 0,
-            // null = chưa đủ dữ liệu để so sánh; AI phải nói "chưa đủ dữ liệu" thay vì suy diễn
-            vsPrevious3Avg:
-              tbTruoc > 0 ? Number(((total - tbTruoc) / tbTruoc).toFixed(4)) : null,
-          };
-        });
-      },
-    );
+      return {
+        category: {
+          id: r.id,
+          name: r.name,
+          icon: r.icon,
+          color: r.color,
+        },
+        total,
+        count: Number(r.count),
+        average: Math.round(Number(r.average)),
+        percentOfExpense: mauSo > 0 ? Number((total / mauSo).toFixed(4)) : 0,
+        percentOfIncome: income > 0 ? Number((total / income).toFixed(4)) : 0,
+        // null = chưa đủ dữ liệu để so sánh; AI phải nói "chưa đủ dữ liệu" thay vì suy diễn
+        vsPrevious3Avg:
+          tbTruoc > 0 ? Number(((total - tbTruoc) / tbTruoc).toFixed(4)) : null,
+      };
+    });
   }
 
   // ————————————————————— Xu hướng —————————————————————
@@ -199,35 +185,29 @@ export class StatsService {
     const { range } = await this.giaiMaKhoang(userId, query);
     const user = await this.users.findOneByOrFail({ id: userId });
 
-    return this.redis.remember(
-      RedisKeys.stats(userId, `trend:${query.groupBy}`, rangeKey(range)),
-      RedisTtl.STATS,
-      async () => {
-        // Gom nhóm theo múi giờ của user, không phải UTC — nếu không, giao dịch lúc 7h sáng
-        // sẽ bị xếp vào ngày hôm trước
-        const rows = await this.baseQuery(userId, range)
-          .select(
-            `to_char(date_trunc('${query.groupBy}', t.date AT TIME ZONE :tz), 'YYYY-MM-DD')`,
-            'bucket',
-          )
-          .addSelect('t.type', 'type')
-          .addSelect('SUM(t.amount)', 'total')
-          .setParameter('tz', user.timezone)
-          .groupBy('bucket')
-          .addGroupBy('t.type')
-          .orderBy('bucket', 'ASC')
-          .getRawMany<{ bucket: string; type: TxType; total: string }>();
+    // Gom nhóm theo múi giờ của user, không phải UTC — nếu không, giao dịch lúc 7h sáng
+    // sẽ bị xếp vào ngày hôm trước
+    const rows = await this.baseQuery(userId, range)
+      .select(
+        `to_char(date_trunc('${query.groupBy}', t.date AT TIME ZONE :tz), 'YYYY-MM-DD')`,
+        'bucket',
+      )
+      .addSelect('t.type', 'type')
+      .addSelect('SUM(t.amount)', 'total')
+      .setParameter('tz', user.timezone)
+      .groupBy('bucket')
+      .addGroupBy('t.type')
+      .orderBy('bucket', 'ASC')
+      .getRawMany<{ bucket: string; type: TxType; total: string }>();
 
-        const gom = new Map<string, { income: number; expense: number }>();
-        for (const r of rows) {
-          const o = gom.get(r.bucket) ?? { income: 0, expense: 0 };
-          o[r.type === TxType.INCOME ? 'income' : 'expense'] = Number(r.total);
-          gom.set(r.bucket, o);
-        }
+    const gom = new Map<string, { income: number; expense: number }>();
+    for (const r of rows) {
+      const o = gom.get(r.bucket) ?? { income: 0, expense: 0 };
+      o[r.type === TxType.INCOME ? 'income' : 'expense'] = Number(r.total);
+      gom.set(r.bucket, o);
+    }
 
-        return [...gom.entries()].map(([bucket, v]) => ({ bucket, ...v }));
-      },
-    );
+    return [...gom.entries()].map(([bucket, v]) => ({ bucket, ...v }));
   }
 
   // ————————————————————— Lịch nhiệt —————————————————————
@@ -248,33 +228,27 @@ export class StatsService {
           monthStartDay: user.monthStartDay,
         });
 
-    return this.redis.remember(
-      RedisKeys.stats(userId, 'calendar', rangeKey(range)),
-      RedisTtl.STATS,
-      async () => {
-        const rows = await this.baseQuery(userId, range)
-          .select(`to_char(t.date AT TIME ZONE :tz, 'YYYY-MM-DD')`, 'date')
-          .addSelect('SUM(t.amount)', 'expense')
-          .addSelect('COUNT(*)', 'count')
-          .andWhere('t.type = :type', { type: TxType.EXPENSE })
-          .setParameter('tz', user.timezone)
-          .groupBy('date')
-          .orderBy('date', 'ASC')
-          .getRawMany<{ date: string; expense: string; count: string }>();
+    const rows = await this.baseQuery(userId, range)
+      .select(`to_char(t.date AT TIME ZONE :tz, 'YYYY-MM-DD')`, 'date')
+      .addSelect('SUM(t.amount)', 'expense')
+      .addSelect('COUNT(*)', 'count')
+      .andWhere('t.type = :type', { type: TxType.EXPENSE })
+      .setParameter('tz', user.timezone)
+      .groupBy('date')
+      .orderBy('date', 'ASC')
+      .getRawMany<{ date: string; expense: string; count: string }>();
 
-        const days = rows.map((r) => ({
-          date: r.date,
-          expense: Number(r.expense),
-          count: Number(r.count),
-        }));
+    const days = rows.map((r) => ({
+      date: r.date,
+      expense: Number(r.expense),
+      count: Number(r.count),
+    }));
 
-        return {
-          days,
-          // FE dùng để chuẩn hóa độ đậm màu heatmap
-          max: days.reduce((m, d) => Math.max(m, d.expense), 0),
-        };
-      },
-    );
+    return {
+      days,
+      // FE dùng để chuẩn hóa độ đậm màu heatmap
+      max: days.reduce((m, d) => Math.max(m, d.expense), 0),
+    };
   }
 
   // ————————————————————— Nội bộ —————————————————————

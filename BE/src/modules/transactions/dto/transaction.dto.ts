@@ -76,16 +76,33 @@ export interface TransactionDto {
   tags: string[];
   /** `null` = chưa xét xem có phần trả hộ người khác không */
   reviewedAt: Date | null;
+  /**
+   * Mã tham chiếu ngân hàng — thứ để đối chiếu với sao kê khi có tranh chấp.
+   *
+   * Trước đây không trả ra ngoài, nên màn hình chi tiết không có gì ngoài số tiền và nội
+   * dung bị cắt cụt. Đây mới là thông tin đáng xem khi mở một giao dịch.
+   */
+  referenceCode: string | null;
+  /** `id` bên SePay — tra ngược lên dashboard của họ */
+  sepayId: number | null;
   category: {
     id: string;
     name: string;
     icon: string;
     color: string;
   } | null;
+  /** Khoản chia cho bạn bè gắn với giao dịch này — `null` nếu chưa chia */
+  split?: {
+    id: string;
+    note: string | null;
+    shares: { name: string; amount: number }[];
+  } | null;
 }
 
 /** Whitelist tường minh — `walletId`/`userId` là chi tiết nội bộ, không ra API */
-export function toTransactionDto(t: Transaction & { category?: Category }): TransactionDto {
+export function toTransactionDto(
+  t: Transaction & { category?: Category; split?: TransactionDto['split'] },
+): TransactionDto {
   return {
     id: t.id,
     type: t.type,
@@ -94,6 +111,9 @@ export function toTransactionDto(t: Transaction & { category?: Category }): Tran
     note: t.note ?? null,
     tags: t.tags ?? [],
     reviewedAt: t.reviewedAt ?? null,
+    referenceCode: t.referenceCode ?? null,
+    sepayId: t.sepayId ?? null,
+    split: t.split ?? null,
     category: t.category
       ? {
           id: t.category.id,

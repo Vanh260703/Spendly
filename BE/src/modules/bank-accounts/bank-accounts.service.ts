@@ -1,7 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
-import { RedisKeys, RedisService } from '../../shared/redis';
 import { LinkBankAccountDto, UpdateBankAccountDto } from './dto/bank-account.dto';
 import { BankAccount } from './entities/bank-account.entity';
 
@@ -10,7 +9,6 @@ export class BankAccountsService {
   constructor(
     @InjectRepository(BankAccount)
     private readonly repo: Repository<BankAccount>,
-    private readonly redis: RedisService,
   ) {}
 
   findAll(userId: string): Promise<BankAccount[]> {
@@ -54,7 +52,6 @@ export class BankAccountsService {
   async unlink(userId: string, id: string): Promise<void> {
     const a = await this.findOne(userId, id);
     await this.repo.remove(a);
-    await this.redis.delByPrefix(RedisKeys.statsPrefix(userId));
   }
 
   /** Tra chủ sở hữu từ số tài khoản — webhook SePay không kèm `userId` */

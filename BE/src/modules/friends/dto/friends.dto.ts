@@ -16,8 +16,26 @@ export const createContactSchema = z.object({
     .optional(),
 });
 
+/** ~1.4MB base64 ≈ ảnh gốc 1MB — quá đủ cho một mã QR, và chặn được ảnh chụp màn hình 4K */
+const GIOI_HAN_QR = 1_400_000;
+
 export const updateContactSchema = createContactSchema.partial().extend({
   isArchived: z.boolean().optional(),
+  /**
+   * Ảnh QR dạng data URI. `null` để xóa ảnh.
+   *
+   * Chỉ nhận `image/*` — không nhận `text/html` hay `image/svg+xml`, vì SVG chứa được
+   * `<script>` và trình duyệt sẽ chạy nó khi ảnh được mở trực tiếp.
+   */
+  qrImage: z
+    .string()
+    .max(GIOI_HAN_QR, 'Ảnh quá lớn — hãy dùng ảnh dưới 1MB')
+    .regex(
+      /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/,
+      'Ảnh không hợp lệ (chỉ nhận PNG, JPEG, WebP, GIF)',
+    )
+    .nullable()
+    .optional(),
 });
 
 export const listContactsSchema = z.object({
@@ -110,4 +128,6 @@ export interface ContactDto {
   isArchived: boolean;
   /** Dương = họ nợ bạn · Âm = bạn nợ họ. Luôn tính bằng SUM(), không đọc cột. */
   balance: number;
+  /** CHỈ có ở endpoint chi tiết — danh sách không kèm để khỏi tải hàng trăm KB mỗi lần */
+  qrImage?: string | null;
 }

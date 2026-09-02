@@ -22,6 +22,12 @@ export interface Transaction {
   tags: string[];
   /** `null` = chưa xét xem có phần trả hộ người khác không */
   reviewedAt: string | null;
+  /** Mã tham chiếu ngân hàng — đối chiếu với sao kê */
+  referenceCode: string | null;
+  /** `id` bên SePay */
+  sepayId: number | null;
+  /** Khoản chia cho bạn bè gắn với giao dịch này */
+  split?: { id: string; note: string | null; shares: { name: string; amount: number }[] } | null;
   category: {
     id: string;
     name: string;
@@ -143,6 +149,8 @@ export interface Contact {
   /** Dương = họ nợ bạn · Âm = bạn nợ họ */
   balance: number;
   lastActivityAt?: string | null;
+  /** Ảnh QR chuyển khoản — CHỈ có ở endpoint chi tiết, không có trong danh sách */
+  qrImage?: string | null;
 }
 
 export interface SharedExpenseShare {
