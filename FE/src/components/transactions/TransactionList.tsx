@@ -2,8 +2,11 @@
 
 import { Check, ChevronRight, Receipt, Users } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
-import { Button, Card, EmptyState, ErrorState, Skeleton, cn } from '@/components/ui';
-import { useDanhDauDaXet, useTransactions } from '@/hooks/useFinance';
+import {
+  Badge, Button, CategoryIcon, EmptyState, ErrorState, Skeleton, cn,
+} from '@/components/ui';
+import { useDanhDauDaXet, useTransactions, useUpdateTransaction } from '@/hooks/useFinance';
+import { CategoryPicker } from './CategoryPicker';
 import type { TxFilters } from '@/lib/api';
 import type { ApiError } from '@/lib/api/client';
 import { formatDate, formatMoney } from '@/lib/format';
@@ -40,13 +43,18 @@ interface Nhom {
 }
 
 /**
- * Sổ giao dịch — **gom theo ngày, mặc định thu gọn**.
+ * Sổ giao dịch.
  *
- * Đổ hết vài chục dòng phẳng ra màn hình thì mắt không bám được vào đâu: ngày lặp lại ở mọi
- * dòng, và không thấy được "hôm đó tiêu bao nhiêu". Gom theo ngày cho một tầng tóm tắt —
- * lướt qua các ngày trước, mở đúng ngày cần xem.
+ * ⚠️ BẢN THIẾT KẾ LẠI — bỏ hẳn mô hình "mỗi ngày một Card viền + bảng `<table>` bên trong".
+ * Đóng khung từng nhóm ngày làm màn hình thành một chồng hộp lặp lại, và bảng thì mang cảm
+ * giác "sổ sách kế toán" hơn là một app dùng hằng ngày. Giờ toàn bộ sổ là MỘT dòng chảy liên
+ * tục, phân cách bằng gạch mảnh (`divide-y`) — đúng cách các app ngân hàng/ví điện tử thật
+ * trình bày lịch sử giao dịch: tiêu đề ngày chỉ là một dòng chữ đậm giữa dòng chảy, không
+ * phải một hộp riêng.
  *
- * Ngày mới nhất mở sẵn: mở app ra là thấy ngay cái vừa xảy ra, không phải bấm.
+ * Vẫn giữ hành vi thu/mở theo ngày (ngày mới nhất mở sẵn) — hữu ích khi lịch sử dài — nhưng
+ * bỏ luôn thẻ `<table>`: mỗi giao dịch giờ là một hàng flex thường, chi tiết mở ngay bên
+ * dưới bằng một `<div>` chứ không phải `<tr colSpan>`.
  */
 export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
   const {
@@ -54,8 +62,10 @@ export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
   } = useTransactions(filters);
 
   const danhDau = useDanhDauDaXet();
+  const doiDanhMuc = useUpdateTransaction();
   const [dongLai, setDongLai] = useState<Set<string>>(new Set());
   const [moChiTiet, setMoChiTiet] = useState<string | null>(null);
+  const [chonDanhMucCho, setChonDanhMucCho] = useState<Transaction | null>(null);
 
   const items = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
 
@@ -76,11 +86,7 @@ export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
 
   if (isError) {
     // Lỗi mà hiện "chưa có giao dịch nào" là user tưởng mất sạch dữ liệu
-    return (
-      <Card>
-        <ErrorState message={(error as ApiError).message} onRetry={() => void refetch()} />
-      </Card>
-    );
+    return <ErrorState message={(error as ApiError).message} onRetry={() => void refetch()} />;
   }
 
   if (!items.length) {
@@ -102,36 +108,28 @@ export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
 
   return (
     <>
-      <div className="space-y-2">
-        {nhom.map((g, i) => {
-          // Ngày mới nhất mở sẵn; những ngày sau thu gọn cho tới khi bấm
-          const mo = i === 0 ? !dongLai.has(g.khoa) : dongLai.has(g.khoa);
+      {nhom.map((g, i) => {
+        // Ngày mới nhất mở sẵn; những ngày sau thu gọn cho tới khi bấm
+        const mo = i === 0 ? !dongLai.has(g.khoa) : dongLai.has(g.khoa);
 
-          return (
-            <Card key={g.khoa} className="!p-0">
-              <button
-                type="button"
-                onClick={() => doiTrangThai(g.khoa)}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
-              >
+        return (
+          <div key={g.khoa} className={i > 0 ? 'mt-1 border-t pt-1' : ''}>
+            {/*
+              Tầng 1 (chevron + ngày + tổng) KHÔNG BAO GIỜ được tràn/xuống dòng — đây là thứ
+              mắt quét qua để trả lời "hôm đó tiêu bao nhiêu". Tầng 2 (badge chưa xét) đặt
+              dòng riêng bên dưới vì độ dài thay đổi thất thường.
+            */}
+            <button
+              type="button"
+              onClick={() => doiTrangThai(g.khoa)}
+              className="flex w-full flex-col gap-1 rounded-xl px-1 py-2.5 text-left transition-colors hover:bg-[var(--surface-2)]"
+            >
+              <div className="flex items-center gap-2">
                 <ChevronRight
                   size={15}
                   className={cn('muted shrink-0 transition-transform', mo && 'rotate-90')}
                 />
-
-                <span className="text-sm font-medium">{nhanNgay(g.khoa)}</span>
-
-                <span className="muted text-xs">
-                  {g.items.length} giao dịch
-                  {/* Số chưa xét đặt ngay ở đầu ngày — không phải mở ra mới biết còn sót */}
-                  {g.chuaXet > 0 && (
-                    <span className="ml-1.5 rounded-full bg-brand px-1.5 py-0.5 text-white">
-                      {g.chuaXet} chưa xét
-                    </span>
-                  )}
-                </span>
-
-                {/* Net của ngày: thứ trả lời "hôm đó tiêu bao nhiêu" mà không cần mở ra */}
+                <span className="text-sm font-semibold">{nhanNgay(g.khoa)}</span>
                 <span
                   className={cn(
                     'tabular ml-auto shrink-0 text-sm font-semibold',
@@ -141,139 +139,151 @@ export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
                   {g.net >= 0 ? '+' : '−'}
                   {formatMoney(Math.abs(g.net))}
                 </span>
+              </div>
+              <div className="muted flex flex-wrap items-center gap-1.5 pl-[23px] text-xs">
+                <span>{g.items.length} giao dịch</span>
+                {g.chuaXet > 0 && <Badge tone="brand">{g.chuaXet} chưa xét</Badge>}
+              </div>
+            </button>
 
-                {/*
-                  Khoảng đệm khớp ĐÚNG cột nút ✓ ở dòng con (`w-9`).
-                  Không có nó thì tổng của ngày lệch sang phải 36px so với số tiền từng
-                  dòng — mắt phải nhảy qua nhảy lại khi dò xem tổng có khớp không.
-                */}
-                <span className="w-9 shrink-0" aria-hidden />
-              </button>
-
-              {mo && (
-                <table className="w-full border-t text-sm">
-                  <tbody className="divide-y">
-                    {g.items.map((t) => (
-                      <Fragment key={t.id}>
-                      <tr
-                        className="group cursor-pointer"
-                        onClick={() => setMoChiTiet((cu) => (cu === t.id ? null : t.id))}
+            {mo && (
+              <div className="divide-y divide-[var(--border)] pl-[23px]">
+                {g.items.map((t) => (
+                  <Fragment key={t.id}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setMoChiTiet((cu) => (cu === t.id ? null : t.id))}
+                      className="group flex cursor-pointer items-center gap-3 py-2.5 pr-1 pl-2"
+                    >
+                      {/* Vạch trái thay cho viền ô bảng cũ — chưa xét thì tô màu brand */}
+                      <span
+                        className={cn(
+                          'h-8 w-[3px] shrink-0 rounded-full',
+                          t.reviewedAt ? 'bg-transparent' : 'bg-brand',
+                        )}
+                        aria-hidden
+                      />
+                      {/*
+                        Đây là thao tác CHÍNH của trang này: gán/sửa danh mục. Bấm thẳng vào
+                        icon để mở picker, không cần mở chi tiết trước — hầu hết lượt bấm là
+                        soát một dòng "Chưa phân loại" rồi gán ngay, không cần xem gì khác.
+                      */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setChonDanhMucCho(t);
+                        }}
+                        className="shrink-0 rounded-xl transition hover:brightness-110"
+                        aria-label={`Đổi danh mục cho "${t.note || 'giao dịch'}"`}
+                        title="Đổi danh mục"
                       >
-                        {/* Chỉ GIỜ — ngày đã nằm ở tiêu đề nhóm, lặp lại là thừa */}
-                        <td
-                          className={cn(
-                            'muted tabular w-14 border-l-2 py-2 pl-3 whitespace-nowrap',
-                            t.reviewedAt ? 'border-transparent' : 'border-brand',
-                          )}
-                        >
-                          {gio(t.date)}
-                        </td>
+                        <CategoryIcon icon={t.category?.icon} color={t.category?.color} size="sm" />
+                      </button>
 
-                        {/* `max-w-0` + `truncate`: nội dung dài không đẩy cột tiền ra ngoài */}
-                        <td className="max-w-0 px-2 py-2">
-                          <span className="block truncate" title={t.note ?? undefined}>
-                            {t.note || '—'}
-                          </span>
-                        </td>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm" title={t.note ?? undefined}>
+                          {t.note || '—'}
+                        </p>
+                        <p className="muted tabular text-xs">
+                          {gio(t.date)} · {t.category?.name ?? 'Chưa phân loại'}
+                        </p>
+                      </div>
 
-                        <td
-                          className={cn(
-                            'tabular py-2 pr-3 pl-2 text-right font-semibold whitespace-nowrap',
-                            t.type === 'income' ? 'text-income' : 'text-expense',
-                          )}
-                        >
-                          {t.type === 'income' ? '+' : '−'}
-                          {formatMoney(t.amount)}
-                        </td>
+                      <span
+                        className={cn(
+                          'tabular shrink-0 text-sm font-semibold',
+                          t.type === 'income' ? 'text-income' : 'text-expense',
+                        )}
+                      >
+                        {t.type === 'income' ? '+' : '−'}
+                        {formatMoney(t.amount)}
+                      </span>
 
-                        <td className="w-9 py-1 pr-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className={cn(
-                              'transition',
-                              t.reviewedAt &&
-                                'opacity-0 group-hover:opacity-100 focus:opacity-100',
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          '!size-8 shrink-0 transition',
+                          t.reviewedAt && 'opacity-0 group-hover:opacity-100 focus:opacity-100',
+                        )}
+                        loading={danhDau.isPending && danhDau.variables?.id === t.id}
+                        // Chặn nổi bọt: bấm ✓ không được kéo theo mở/đóng chi tiết
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          danhDau.mutate({ id: t.id, reviewed: !t.reviewedAt });
+                        }}
+                        aria-label={t.reviewedAt ? 'Bỏ đánh dấu' : 'Đánh dấu đã xét'}
+                        title={
+                          t.reviewedAt
+                            ? 'Đã xét — bấm để trả về hàng chờ'
+                            : 'Không có phần trả hộ, đánh dấu đã xét'
+                        }
+                      >
+                        <Check size={15} className={t.reviewedAt ? 'muted' : 'text-ok'} />
+                      </Button>
+                    </div>
+
+                    {moChiTiet === t.id && (
+                      /*
+                        Chi tiết mở NGAY DƯỚI dòng — bạn đang dò một con số giữa danh sách,
+                        nhảy sang cửa sổ khác là mất chỗ đang xem. Trước đây là `<tr colSpan>`
+                        trong bảng; giờ chỉ là một `<div>` thường, không còn phụ thuộc cấu
+                        trúc bảng nào cả.
+                      */
+                      <div className="bg-[var(--surface-2)] px-3 py-3 text-xs">
+                        <dl className="space-y-1.5">
+                          <div>
+                            <dt className="muted">Nội dung đầy đủ</dt>
+                            <dd className="break-words">{t.note || '—'}</dd>
+                          </div>
+
+                          <div className="flex flex-wrap gap-x-6 gap-y-1.5">
+                            <span>
+                              <dt className="muted inline">Thời điểm: </dt>
+                              <dd className="tabular inline">
+                                {formatDate(t.date)} {gio(t.date)}
+                              </dd>
+                            </span>
+                            {t.referenceCode && (
+                              <span>
+                                <dt className="muted inline">Mã tham chiếu: </dt>
+                                <dd className="tabular inline">{t.referenceCode}</dd>
+                              </span>
                             )}
-                            loading={danhDau.isPending && danhDau.variables?.id === t.id}
-                            // Chặn nổi bọt: bấm ✓ không được kéo theo mở/đóng chi tiết
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              danhDau.mutate({ id: t.id, reviewed: !t.reviewedAt });
-                            }}
-                            aria-label={t.reviewedAt ? 'Bỏ đánh dấu' : 'Đánh dấu đã xét'}
-                            title={
-                              t.reviewedAt
-                                ? 'Đã xét — bấm để trả về hàng chờ'
-                                : 'Không có phần trả hộ, đánh dấu đã xét'
-                            }
-                          >
-                            <Check size={15} className={t.reviewedAt ? 'muted' : 'text-ok'} />
-                          </Button>
-                        </td>
-                      </tr>
+                            {t.sepayId !== null && (
+                              <span>
+                                <dt className="muted inline">SePay ID: </dt>
+                                <dd className="tabular inline">{t.sepayId}</dd>
+                              </span>
+                            )}
+                          </div>
 
-                      {moChiTiet === t.id && (
-                        <tr>
-                          {/*
-                            Chi tiết mở NGAY DƯỚI dòng, không phải modal: bạn đang dò một
-                            con số giữa danh sách, nhảy sang cửa sổ khác là mất chỗ đang xem.
-                          */}
-                          <td colSpan={4} className="bg-[var(--surface-2)] px-3 py-3">
-                            <dl className="space-y-1.5 text-xs">
-                              <div>
-                                <dt className="muted">Nội dung đầy đủ</dt>
-                                {/* `break-words`: nội dung ngân hàng có chuỗi dài không dấu cách */}
-                                <dd className="break-words">{t.note || '—'}</dd>
-                              </div>
-
-                              <div className="flex flex-wrap gap-x-6 gap-y-1.5">
-                                <span>
-                                  <dt className="muted inline">Thời điểm: </dt>
-                                  <dd className="tabular inline">{formatDate(t.date)} {gio(t.date)}</dd>
-                                </span>
-                                {t.referenceCode && (
-                                  <span>
-                                    <dt className="muted inline">Mã tham chiếu: </dt>
-                                    <dd className="tabular inline">{t.referenceCode}</dd>
-                                  </span>
-                                )}
-                                {t.sepayId !== null && (
-                                  <span>
-                                    <dt className="muted inline">SePay ID: </dt>
-                                    <dd className="tabular inline">{t.sepayId}</dd>
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Đã chia cho bạn bè thì cho thấy luôn ai gánh bao nhiêu */}
-                              {t.split && (
-                                <div className="mt-2 rounded-lg bg-[var(--surface)] p-2">
-                                  <p className="muted mb-1 flex items-center gap-1.5">
-                                    <Users size={12} />
-                                    Đã chia{t.split.note ? ` · ${t.split.note}` : ''}
-                                  </p>
-                                  {t.split.shares.map((sh, i) => (
-                                    <div key={i} className="flex justify-between">
-                                      <span>{sh.name}</span>
-                                      <span className="tabular">{formatMoney(sh.amount)}</span>
-                                    </div>
-                                  ))}
+                          {t.split && (
+                            <div className="mt-2 rounded-lg bg-[var(--surface)] p-2">
+                              <p className="muted mb-1 flex items-center gap-1.5">
+                                <Users size={12} />
+                                Đã chia{t.split.note ? ` · ${t.split.note}` : ''}
+                              </p>
+                              {t.split.shares.map((sh, i) => (
+                                <div key={i} className="flex justify-between">
+                                  <span>{sh.name}</span>
+                                  <span className="tabular">{formatMoney(sh.amount)}</span>
                                 </div>
-                              )}
-                            </dl>
-                          </td>
-                        </tr>
-                      )}
-                      </Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </Card>
-          );
-        })}
-      </div>
+                              ))}
+                            </div>
+                          )}
+                        </dl>
+                      </div>
+                    )}
+                  </Fragment>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       {hasNextPage && (
         <Button
@@ -284,6 +294,18 @@ export function TransactionList({ filters = {} }: { filters?: TxFilters }) {
         >
           Xem thêm
         </Button>
+      )}
+
+      {chonDanhMucCho && (
+        <CategoryPicker
+          open
+          onClose={() => setChonDanhMucCho(null)}
+          type={chonDanhMucCho.type}
+          currentId={chonDanhMucCho.category?.id}
+          onSelect={(categoryId) =>
+            doiDanhMuc.mutate({ id: chonDanhMucCho.id, categoryId })
+          }
+        />
       )}
     </>
   );

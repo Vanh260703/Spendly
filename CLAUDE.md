@@ -4,27 +4,35 @@ Hướng dẫn cho Claude Code khi làm việc trong repo này.
 
 ## Project
 
-**Spendly** — app web cá nhân làm đúng **HAI việc**:
+**Spendly** — app web cá nhân. Hai việc lõi:
 
 1. **Nhìn thấy dòng tiền luân chuyển** — app **chủ động kéo** giao dịch từ SePay về, không gõ tay.
 2. **Ghi log ai nợ mình** — trả hộ cả nhóm thì biết từng người nợ bao nhiêu.
 
-Không có gì khác. UI copy, comment và commit message viết bằng **tiếng Việt**.
+Cộng bốn việc hỗ trợ (phục hồi từ bản trước, phạm vi có chọn lọc — xem bảng "Đã GỠ BỎ"):
+đặt hạn mức chi (**ngân sách**), đặt **mục tiêu** để dành, theo dõi **khoản nợ** cá nhân, và
+**AI đọc số liệu đưa nhận định** (đánh giá mức cần thiết / báo cáo kỳ / điểm sức khỏe tài
+chính — KHÔNG chat). Chi tiết đầy đủ: `SPEC.md` §1, §4.6, §4.7.
+
+UI copy, comment và commit message viết bằng **tiếng Việt**.
 
 - `FE/` — Next.js 16 App Router + React 19 + TypeScript + Tailwind v4. Deploy tĩnh (`output: 'export'`).
-- `BE/` — NestJS 11 + TypeORM + PostgreSQL + Redis. API prefix `/api/v1`.
+- `BE/` — NestJS 11 + TypeORM + PostgreSQL. API prefix `/api/v1`. Không Redis, không hàng đợi.
 
 ### ⚠️ Đã GỠ BỎ — đừng thêm lại
 
 | Thứ | Vì sao gỡ |
 |---|---|
-| **AI** (`modules/ai`, `ai_insights`, `chat_messages`, LLM client, prompt builder) | user tự nhìn số liệu và tự quyết định |
-| **Ngân sách · Mục tiêu · Khoản nợ** | không thuộc hai việc ở trên |
-| **`CategoryKind`** (need/want/saving) + biểu đồ 50/30/20 | sinh ra để phục vụ AI |
 | **Auth** (đăng ký/đăng nhập/JWT/refresh token) | app chỉ phục vụ một người |
 | **`Wallet` + `initialBalance`** | số dư do ngân hàng cấp, không khai tay |
 | **Nhập giao dịch bằng tay** + `adjust-balance` | ngân hàng là nguồn sự thật |
+| **AI dạng chat** (`POST /ai/chat`, `chat_messages`) | AI giờ chỉ ở dạng lệnh/phân tích tài chính đã tổng hợp sẵn — không hỏi-đáp tự do |
+| **Giới hạn lượt gọi AI/ngày** (`AI_DAILY_LIMIT`, Redis đếm lượt) | cache `inputHash` theo kỳ (SPEC §4.7) đã là chốt chặn thật; user tự quản lý mức dùng key của mình |
 | Import CSV · PWA · rate-limit HTTP | quyết định cũ, vẫn giữ nguyên |
+
+⚠️ **AI, Ngân sách, Mục tiêu, Khoản nợ, `CategoryKind` đã được PHỤC HỒI** — nếu thấy tài
+liệu cũ hay commit message nói chúng "đã gỡ", đó là mô tả một giai đoạn TRƯỚC, không phải
+hiện tại. Đọc `SPEC.md` để biết trạng thái thật.
 
 ## Working rules (từ user — bắt buộc theo)
 
@@ -127,16 +135,24 @@ BE/src/
 ├── config/            env schema (Zod)
 ├── common/            helper THUẦN, stateless — entities/ transformers/ decorators/
 │                      filters/ interceptors/ pipes/ guards/ utils/
-├── shared/            module HẠ TẦNG có provider + vòng đời (redis/)
 ├── database/          data-source, migrations/
 └── modules/           MỘT thư mục cho MỖI domain
     ├── users/ categories/ transactions/ stats/ export/
     ├── bank-accounts/    tài khoản ngân hàng liên kết qua SePay
     ├── sepay/            kéo giao dịch từ SePay (client · normalizer · sync)
-    └── friends/          danh bạ + công nợ (CHUNG một module: tách đôi thành phụ thuộc vòng)
+    ├── friends/          danh bạ + công nợ (CHUNG một module: tách đôi thành phụ thuộc vòng)
+    ├── budgets/          hạn mức chi + scheduler chốt kỳ (SPEC §4.6a)
+    ├── goals/            mục tiêu để dành (SPEC §4.6b)
+    ├── debts/            khoản vay cá nhân + kế hoạch trả nợ (SPEC §4.6c)
+    └── ai/               necessity-review/report/health-score + scheduler (SPEC §4.7) — KHÔNG chat
 ```
 
-Phụ thuộc một chiều: `modules/ → shared/ → common/ → config/`.
+⚠️ **Không còn thư mục `shared/`.** Redis từng nằm ở `shared/redis/` để cache AI + đếm lượt
+gọi/ngày — cả hai lý do đó không còn (SPEC §4.7), nên toàn bộ `shared/` đã bị xóa, không chỉ
+phần rate-limit. Đừng thêm lại module hạ tầng có provider+vòng đời trừ khi có nhu cầu MỚI
+thật sự cần nó (không phải để cache một thứ Postgres đã đủ nhanh).
+
+Phụ thuộc một chiều: `modules/ → common/ → config/`.
 
 ⚠️ **Không dùng path alias `@/` ở BE** — `tsc` không rewrite đường dẫn nên `require("@/...")` chết lúc runtime.
 
@@ -192,7 +208,7 @@ thuộc số cũ.
 | `BE/` | `npm run typecheck` | `tsc --noEmit` |
 | `BE/` | `npm run migration:generate -- src/database/migrations/<Tên>` | sinh migration |
 | `BE/` | `npm run migration:run` | chạy migration |
-| `BE/` | `npm test` | test e2e (Postgres + Redis THẬT, DB `spendly_test`) |
+| `BE/` | `npm test` | test e2e (Postgres THẬT, DB `spendly_test`) |
 | `FE/` | `npm run dev` · `npm run build` | web tại http://localhost:3000 |
 
 ### Docker — những chỗ đã trả giá
@@ -202,25 +218,32 @@ thuộc số cũ.
 - ⚠️ **`docker compose up --build` KHÔNG tự tạo lại container.** Sửa code xong phải `--force-recreate`, nếu không container vẫn chạy image cũ. Triệu chứng dễ nhầm: route mới trả **404**.
 - ⚠️ **Volume `pgdata` không đi theo git.** Máy mới = DB trắng. Dùng `docker/backup.sh` + `restore.sh`.
 - **`NEXT_PUBLIC_API_URL` là build ARG** — đổi phải build lại image. Phải là `localhost:3001` (trình duyệt gọi từ ngoài mạng compose), không phải `http://be:3001`.
-- Cổng Postgres/Redis không mở ra máy thật (5432/6379 bị Homebrew chiếm).
+- Cổng Postgres không mở ra máy thật (5432 bị Homebrew chiếm) — cần truy cập từ ngoài thì mở tạm, xong nhớ đóng lại (đã có bài học: quên kiểm tra cổng trống trước khi mở từng làm rớt container Postgres đang chạy).
 - ⚠️ **Chạy Docker và `npm run start:dev` cùng lúc đá nhau ở cổng 3001.**
 
 ## Test
 
-Chạy trên **Postgres + Redis THẬT**, DB riêng `spendly_test`. **Cố ý không mock** — mọi bug đắt nhất của dự án đều nằm ở ranh giới hạ tầng (`bigint` trả về chuỗi, TypeORM không suy được kiểu cột nullable). Mock đi thì test xanh mà app vẫn hỏng.
+Chạy trên **Postgres THẬT**, DB riêng `spendly_test`. **Cố ý không mock** — mọi bug đắt nhất của dự án đều nằm ở ranh giới hạ tầng (`bigint` trả về chuỗi, TypeORM không suy được kiểu cột nullable). Mock đi thì test xanh mà app vẫn hỏng.
 
 `test/utils/test-app.ts` dựng app qua `configureApp()` — **cùng hàm cấu hình với `main.ts`**.
 
-Tạo giao dịch trong test phải đi qua đường đồng bộ SePay — đúng đường mà đời thật đi. Phần `sepay.normalizer.ts` là hàm THUẦN nên test được không cần mạng.
+Tạo giao dịch trong test phải đi qua đường đồng bộ SePay — đúng đường mà đời thật đi. Phần `sepay.normalizer.ts` là hàm THUẦN nên test được không cần mạng. Test AI thì mock `LlmClient` (gọi mạng thật ra ngoài là đốt quota mỗi lần chạy CI), không mock Postgres/`AiService`.
 
-⚠️ **Đang có 5 spec viết theo mô hình CŨ và đang đỏ.** Chúng gọi `POST /transactions`, `GET /wallet`, đăng nhập — những thứ đã gỡ. Phải viết lại (giả lập SePay API trả về) trước khi tin vào kết quả `npm test`.
+⚠️ **Đang có 5 spec viết theo mô hình CŨ và đang đỏ.** Chúng gọi `POST /transactions`, `GET /wallet`, đăng nhập — những thứ đã gỡ. Phải viết lại (giả lập SePay API trả về) trước khi tin vào kết quả `npm test`. Chưa có test nào cho `budgets`/`goals`/`debts`/`ai` — cần viết mới, không phải sửa từ 5 spec cũ.
 
 ## Docs
 
-**`CLAUDE.md` (file này) là tài liệu chính** — data model, quy tắc, lệnh, bẫy đã trả giá.
+Hai file, hai vai trò khác nhau — đổi tính năng/data model/API thì cập nhật **cả hai cùng
+lúc với code**, đừng để một file lệch khỏi thực tế mà file kia không hay:
 
-- `SHARED_EXPENSES.md` — lý do đằng sau tính năng công nợ: mô hình tiền hai chiều, công thức
+- **`SPEC.md`** — đặc tả: app làm gì, vì sao làm vậy (2 việc app làm, data model đầy đủ,
+  nguyên tắc kiến trúc, tóm tắt API, cấu trúc FE). Đọc trước khi làm quen với dự án.
+- **`CLAUDE.md`** (file này) — tài liệu làm việc: quy tắc bắt buộc, bẫy đã trả giá, lệnh
+  chạy dự án. Đọc trước khi CODE trong repo.
+- `SHARED_EXPENSES.md` — đào sâu riêng tính năng công nợ: mô hình tiền hai chiều, công thức
   công nợ, quy tắc làm tròn, trường hợp biên. Đọc khi cần sửa phần đó.
 
-`SPEC.md`, `API_ENDPOINTS.md`, `REDESIGN.md` đã xóa — chúng mô tả app cũ (AI, ngân sách, mục
-tiêu, ví, auth, webhook) nên giữ lại chỉ gây hiểu nhầm. Lấy lại được từ git nếu cần.
+`API_ENDPOINTS.md`, `REDESIGN.md` đã xóa từ đợt viết lại trước — mô tả app cũ (AI, ngân
+sách, mục tiêu, ví, auth, webhook) nên giữ lại chỉ gây hiểu nhầm. `SPEC.md` cũ cũng bị xóa
+cùng đợt đó nhưng đã viết lại (bản hiện tại phản ánh đúng kiến trúc SePay + công nợ). Bản
+cũ lấy lại được từ git nếu cần đối chiếu lịch sử: `git log --all --oneline -- SPEC.md`.

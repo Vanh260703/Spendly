@@ -13,6 +13,15 @@ export enum CategoryType {
  * Phân loại theo khung 50/30/20 — đầu vào quan trọng nhất cho phân tích AI.
  * AI CHỈ được đề xuất cắt giảm ở `WANT`, không bao giờ ở `NEED`/`SAVING`.
  */
+export enum CategoryKind {
+  /** NHU CẦU thiết yếu: tiền nhà, điện nước, ăn cơ bản, đi làm (mục tiêu ~50% thu nhập) */
+  NEED = 'need',
+  /** MONG MUỐN, cắt được: cà phê, xem phim, mua sắm không cần thiết (~30%) */
+  WANT = 'want',
+  /** TIẾT KIỆM / trả nợ (~20%) */
+  SAVING = 'saving',
+}
+
 @Entity('categories')
 @Index(['userId', 'type'])
 export class Category extends BaseEntity {
@@ -35,6 +44,8 @@ export class Category extends BaseEntity {
    * Cần / muốn / tiết kiệm. Nhờ có nó, app trả lời được câu
    * "bao nhiêu % tiền tôi tiêu là thứ có thể cắt bỏ?"
    */
+  @Column({ type: 'enum', enum: CategoryKind, default: CategoryKind.NEED })
+  kind: CategoryKind;
 
   /** Tên icon lucide-react, VD "utensils" (ăn uống), "coffee" (cà phê) */
   @Column()

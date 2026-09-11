@@ -1,5 +1,6 @@
 import { Column, Entity } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
+import { money } from '../../../common/transformers/money.transformer';
 
 /**
  * Người dùng — **luôn có đúng MỘT dòng** (xem `SingleUserService`).
@@ -32,6 +33,12 @@ export class User extends BaseEntity {
 
   // không phải ở đây.
 
+  /**
+   * Thu nhập hàng tháng ước tính — user tự khai, dùng để gợi ý ngân sách theo khung
+   * 50/30/20 và để AI quy đổi "khoản này chiếm bao nhiêu % thu nhập".
+   */
+  @Column({ type: 'bigint', nullable: true, transformer: money })
+  monthlyIncome?: number | null;
 
   /** null = chưa qua onboarding → FE điều hướng vào màn hình thiết lập ban đầu */
   @Column({ type: 'timestamptz', nullable: true })

@@ -85,11 +85,27 @@ export class SingleUserService implements OnModuleInit {
   private async dongBoCaiDat(user: User): Promise<void> {
     const tz = this.config.get<string>('TIMEZONE')!;
     const ngay = this.config.get<number>('MONTH_START_DAY')!;
-    if (user.timezone === tz && user.monthStartDay === ngay) return;
+    /**
+     * ⚠️ Không dùng `?? null`: biến để trống trong `.env` là chuỗi RỖNG (`""`), không phải
+     * `undefined` — `ConfigService.get()` rơi về đọc thẳng `process.env` (bỏ qua kết quả đã
+     * validate/preprocess ở `env.ts`) khi giá trị đã validate là `undefined`, nên `.get()`
+     * trả về `""` chứ không phải `undefined`. `"" ?? null` vẫn ra `""` (không phải giá trị
+     * nullish) — gán thẳng vào cột `bigint` thì `transformer: money` áp `Number("")` = `0`,
+     * user tưởng "để trống" mà tự nhiên thu nhập tháng thành 0.
+     */
+    const raw = this.config.get<number | string>('MONTHLY_INCOME');
+    const thuNhap = raw ? Number(raw) : null;
+    if (user.timezone === tz && user.monthStartDay === ngay && user.monthlyIncome === thuNhap) {
+      return;
+    }
 
-    await this.users.update({ id: user.id }, { timezone: tz, monthStartDay: ngay });
+    await this.users.update(
+      { id: user.id },
+      { timezone: tz, monthStartDay: ngay, monthlyIncome: thuNhap },
+    );
     user.timezone = tz;
     user.monthStartDay = ngay;
+    user.monthlyIncome = thuNhap;
     this.logger.log(`Đã đồng bộ cài đặt từ .env: ${tz}, ngày ${ngay}`);
   }
 

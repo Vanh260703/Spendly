@@ -8,6 +8,7 @@ export interface UserProfileDto {
   avatarUrl: string | null;
   timezone: string;
   monthStartDay: number;
+  monthlyIncome: number | null;
   onboardedAt: Date | null;
   bankAccount?: {
     id: string;
@@ -35,6 +36,7 @@ export function toUserProfile(user: User, account?: BankAccount): UserProfileDto
     avatarUrl: user.avatarUrl ?? null,
     timezone: user.timezone,
     monthStartDay: user.monthStartDay,
+    monthlyIncome: user.monthlyIncome ?? null,
     onboardedAt: user.onboardedAt ?? null,
     ...(account && {
       bankAccount: {

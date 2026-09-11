@@ -99,3 +99,17 @@ export function shiftRange(range: DateRange, n: number, kind: PeriodKind): DateR
 export function rangeKey(range: DateRange): string {
   return `${range.start.toISOString()}_${range.end.toISOString()}`;
 }
+
+/**
+ * `Date` → `"yyyy-mm-dd"` THEO NGÀY LỊCH của `timezone`, không phải UTC.
+ *
+ * Dùng khi một chỗ gọi nội bộ (VD job AI sinh báo cáo cho kỳ đã đóng) đã có sẵn
+ * `DateRange` từ `resolvePeriod`/`shiftRange` — vốn luôn nằm đúng biên NGÀY trong múi giờ
+ * user — nhưng cần truyền lại qua một API chỉ nhận chuỗi ngày (như `StatsService`'s
+ * `from`/`to`, cố ý là chuỗi để tự nới trọn ngày theo múi giờ). Round-trip qua hàm này rồi
+ * `resolvePeriod`/`bienNgay` parse lại sẽ ra ĐÚNG khoảnh khắc UTC ban đầu, vì cả hai đều
+ * dựng mốc ngày theo cùng quy tắc (00:00:00.000 / 23:59:59.999 giờ địa phương).
+ */
+export function formatDateOnly(d: Date, timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(d);
+}

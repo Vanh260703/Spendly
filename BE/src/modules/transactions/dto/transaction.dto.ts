@@ -56,16 +56,8 @@ export const listTransactionQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
-export const adjustBalanceSchema = z.object({
-  /** Số tiền THỰC TẾ user đang có, dùng để tính khoản bù */
-  actualBalance: z.number().int().nonnegative('Số tiền không được âm'),
-  note: z.string().trim().max(500).optional(),
-});
-
-export type CreateTransactionDto = z.infer<typeof createTransactionSchema>;
 export type UpdateTransactionDto = z.infer<typeof updateTransactionSchema>;
 export type ListTransactionQuery = z.infer<typeof listTransactionQuerySchema>;
-export type AdjustBalanceDto = z.infer<typeof adjustBalanceSchema>;
 
 export interface TransactionDto {
   id: string;

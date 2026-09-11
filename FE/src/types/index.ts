@@ -7,6 +7,7 @@ export interface Category {
   id: string;
   name: string;
   type: TxType;
+  kind: CategoryKind;
   icon: string;
   color: string;
   parentId: string | null;
@@ -39,11 +40,12 @@ export interface Transaction {
 
 export interface UserProfile {
   id: string;
-  email: string;
   name: string;
   avatarUrl: string | null;
   timezone: string;
   monthStartDay: number;
+  /** Thu nhập hàng tháng ước tính — user tự khai qua `.env`, AI dùng để quy đổi % */
+  monthlyIncome: number | null;
   onboardedAt: string | null;
   bankAccount?: {
     id: string;
@@ -57,11 +59,13 @@ export interface UserProfile {
 export interface BalanceStats {
   /** Số dư NGÂN HÀNG báo về — không phải app tự cộng trừ */
   currentBalance: number;
+  /** Tiền VẪN trong tài khoản nhưng đã gắn nhãn cho mục tiêu */
+  committedToGoals: number;
   /** Bạn bè đang nợ bạn — tiền này NGOÀI tài khoản, chưa về, KHÔNG tiêu được */
   owedToMe: number;
   /** Bạn đang nợ bạn bè — vẫn trong tài khoản nhưng đã có chủ */
   owedByMe: number;
-  /** Số thực sự tiêu được = currentBalance − owedByMe */
+  /** Số thực sự tiêu được = currentBalance − committedToGoals − owedByMe */
   freeToSpend: number;
   /** Lần cuối nhận webhook — im lặng lâu là dấu hiệu liên kết SePay hỏng */
   lastSyncedAt: string | null;
@@ -83,16 +87,37 @@ export interface SummaryStats {
   /** Phần bạn đã ứng cho người khác trong kỳ */
   lentInPeriod: number;
   net: number;
+  /** Chi tiêu theo need/want/saving — nền cho khung 50/30/20 và gợi ý cắt giảm của AI */
+  byKind: Record<CategoryKind, number>;
+  kindRatio: Record<CategoryKind, number>;
   comparison: {
     previousPeriodExpense: number;
     /** `null` = kỳ trước không có dữ liệu, hiện "so sánh" lúc đó là bịa */
     changePercent: number | null;
     avg3PeriodsExpense: number;
+    /** `true` = kỳ trước chưa được dữ liệu phủ hết nên KHÔNG so sánh (changePercent null) */
+    previousPeriodPartial: boolean;
   };
 }
 
+export interface Anomalies {
+  /** Mức chi thường ngày trong khoảng đang xem */
+  median: number;
+  sampleSize: number;
+  /** Vượt mức này thì bị nêu ra */
+  threshold: number;
+  items: {
+    id: string;
+    amount: number;
+    date: string;
+    note?: string | null;
+    category: { name: string; icon: string; color: string } | null;
+    timesMedian: number;
+  }[];
+}
+
 export interface CategoryStat {
-  category: { id: string; name: string; icon: string; color: string };
+  category: { id: string; name: string; icon: string; color: string; kind: CategoryKind };
   total: number;
   /** Số LẦN giao dịch — phân biệt "1 lần 500k" với "10 lần 50k" */
   count: number;
@@ -116,12 +141,99 @@ export interface CalendarStats {
 
 export type BudgetStatus = 'ok' | 'warning' | 'exceeded';
 
+export interface Budget {
+  id: string;
+  category: { id: string; name: string; icon: string; color: string } | null;
+  period: 'weekly' | 'monthly';
+  amount: number;
+  rolloverIn: number;
+  /** amount + rolloverIn — `progress` tính trên số này, KHÔNG phải `amount` */
+  effectiveAmount: number;
+  spent: number;
+  remaining: number;
+  progress: number;
+  status: BudgetStatus;
+  rollover: boolean;
+  rolloverCapRatio: number;
+  alertThreshold: number;
+  isActive: boolean;
+  periodStart: string;
+  periodEnd: string;
+}
 
+export interface BudgetHistoryEntry {
+  periodStart: string;
+  periodEnd: string;
+  period: 'weekly' | 'monthly';
+  categoryName: string | null;
+  amount: number;
+  rolloverIn: number;
+  effectiveAmount: number;
+  spent: number;
+  rolloverOut: number;
+  adherence: boolean;
+}
 
 export type GoalStatus = 'active' | 'achieved' | 'paused' | 'cancelled';
 
+export interface Goal {
+  id: string;
+  name: string;
+  description: string | null;
+  horizon: 'short' | 'long';
+  targetAmount: number;
+  currentAmount: number;
+  remaining: number;
+  progress: number;
+  deadline: string | null;
+  monthlyContribution: number | null;
+  /** Cần để dành bao nhiêu/kỳ để kịp deadline — BE tính, TỰ ĐỘI LÊN nếu kỳ nào không nạp */
+  requiredMonthly: number | null;
+  /** Số kỳ còn lại tới hạn; 0 khi đã quá hạn */
+  monthsLeft: number;
+  /** true = đã qua hạn mà chưa gom đủ */
+  overdue: boolean;
+  /** Thực tế đã nạp bao nhiêu trong kỳ này — khác với `monthlyContribution` là số tự khai */
+  contributedThisPeriod: number;
+  /** KẾ HOẠCH có đủ kịp hạn không. null = chưa đặt deadline */
+  onTrack: boolean | null;
+  status: GoalStatus;
+  icon: string;
+  color: string;
+}
 
+export interface Debt {
+  id: string;
+  name: string;
+  lender: string | null;
+  principal: number;
+  remaining: number;
+  paid: number;
+  progress: number;
+  interestRate: number;
+  minPayment: number;
+  dueDay: number;
+  strategy: 'snowball' | 'avalanche';
+  isPaid: boolean;
+  startDate: string;
+}
 
+export interface PayoffPlan {
+  strategy: 'snowball' | 'avalanche';
+  order: {
+    debtId: string;
+    name: string;
+    interestRate: number;
+    remaining: number;
+    payoffDate: string;
+    totalInterest: number;
+    months: number;
+  }[];
+  /** null = mức trả hằng tháng không đủ tất toán */
+  debtFreeDate: string | null;
+  totalInterest: number;
+  months: number;
+}
 
 export interface NecessitySuggestion {
   categoryName: string;
@@ -129,6 +241,32 @@ export interface NecessitySuggestion {
   reason: string;
   action?: string;
   monthlySaving: number;
+}
+
+export interface AiInsight {
+  id: string;
+  kind: string;
+  content: string;
+  structured: {
+    summary?: string;
+    suggestions?: NecessitySuggestion[];
+    /** Báo cáo kỳ */
+    highlights?: { label: string; value: string; note?: string }[];
+    warnings?: string[];
+    actions?: { title: string; detail: string; impact?: string }[];
+    /** Điểm sức khỏe tài chính */
+    score?: number;
+    breakdown?: Record<string, number>;
+    explanation?: string;
+  } | null;
+  model: string;
+  tokensUsed: number;
+  /** Kỳ mà báo cáo NÓI VỀ — khác với `generatedAt` là lúc sinh ra nó */
+  periodStart?: string;
+  periodEnd?: string;
+  generatedAt?: string;
+  createdAt?: string;
+  cached?: boolean;
 }
 
 

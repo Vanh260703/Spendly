@@ -61,6 +61,15 @@ export class NghiepVuNganHang1787755115928 implements MigrationInterface {
         await queryRunner.query(`DROP TYPE IF EXISTS "public"."ai_insights_kind_enum"`);
         await queryRunner.query(`DROP TYPE IF EXISTS "public"."chat_messages_role_enum"`);
         await queryRunner.query(`DROP TYPE IF EXISTS "public"."budgets_period_enum"`);
+        /*
+         * ⚠️ Bị THIẾU ở bản gốc — `budget_period_results.period` dùng type RIÊNG với
+         * `budgets.period` dù cùng giá trị ('weekly'/'monthly'): TypeORM sinh mỗi cột enum
+         * một type tên riêng, không share giữa hai bảng. Bỏ sót dòng này khiến type mồ côi
+         * tồn tại sau khi bảng đã xóa — vô hại trên DB đã chạy migration này từ lâu (chỉ
+         * chạy MỘT LẦN), nhưng trên DB build lại từ đầu, migration `Budgets` phía sau cố
+         * tạo lại type CÙNG TÊN này và vỡ với lỗi "already exists".
+         */
+        await queryRunner.query(`DROP TYPE IF EXISTS "public"."budget_period_results_period_enum"`);
         await queryRunner.query(`DROP TYPE IF EXISTS "public"."goals_horizon_enum"`);
         await queryRunner.query(`DROP TYPE IF EXISTS "public"."goals_status_enum"`);
         await queryRunner.query(`DROP TYPE IF EXISTS "public"."debts_strategy_enum"`);

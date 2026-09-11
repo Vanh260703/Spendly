@@ -42,6 +42,15 @@ export class StatsController {
     return this.stats.getByCategory(user.id, query);
   }
 
+  /** Khoản chi lớn bất thường so với thói quen của chính người dùng */
+  @Get('anomalies')
+  anomalies(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(rangeQuerySchema)) query: RangeQuery,
+  ) {
+    return this.stats.getAnomalies(user.id, query);
+  }
+
   @Get('trend')
   trend(
     @CurrentUser() user: AuthUser,

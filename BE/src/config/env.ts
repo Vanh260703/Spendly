@@ -17,12 +17,16 @@ const envSchema = z.object({
   DB_PASSWORD: z.string().min(1),
   DB_NAME: z.string().min(1),
 
-
-
   /**
    * LLM — dùng giao thức OpenAI-compatible nên đổi nhà cung cấp chỉ là sửa 3 biến này.
    * Để trống `LLM_API_KEY` thì app vẫn chạy bình thường, chỉ là tính năng AI báo
    * "chưa sẵn sàng" thay vì làm sập màn hình.
+   *
+   * ⚠️ Cố ý KHÔNG có `AI_DAILY_LIMIT`/hạn mức gọi/ngày — bản trước dùng Redis để đếm, nhưng
+   * cơ chế chặn gọi trùng THẬT SỰ nằm ở Postgres (`ai_insights` khóa theo `inputHash`, xem
+   * `AiService.sinhInsight()`): dữ liệu chưa đổi thì không gọi lại LLM dù có đếm lượt hay
+   * không. Đếm lượt/ngày chỉ là một lớp chặn THÊM, và người dùng chọn tự quản lý việc đó —
+   * thêm Redis chỉ để đếm là cõng cả một service cho một việc không ai dùng tới.
    */
   LLM_PROVIDER: z.string().default('Gemini'),
   LLM_API_KEY: z.string().optional(),
@@ -31,7 +35,6 @@ const envSchema = z.object({
     .url()
     .default('https://generativelanguage.googleapis.com/v1beta/openai'),
   LLM_MODEL: z.string().default('gemini-flash-lite-latest'),
-  AI_DAILY_LIMIT: z.coerce.number().int().positive().default(30),
 
   /**
    * ─── TÀI KHOẢN NGÂN HÀNG ───
@@ -50,6 +53,21 @@ const envSchema = z.object({
   TIMEZONE: z.string().default('Asia/Ho_Chi_Minh'),
   /** Ngày bắt đầu chu kỳ tháng (1–28), VD 25 = "tháng" chạy từ 25 tới 24 tháng sau */
   MONTH_START_DAY: z.coerce.number().int().min(1).max(28).default(1),
+
+  /**
+   * Thu nhập hàng tháng ước tính (đồng) — AI dùng để quy đổi "khoản này chiếm bao nhiêu %
+   * thu nhập". Để trống thì AI vẫn chạy, chỉ bỏ qua phần quy đổi đó.
+   */
+  /**
+   * ⚠️ Để trống trong `.env` thì biến này là CHUỖI RỖNG, không phải `undefined` — và
+   * `z.coerce.number()` biến `""` thành `0`, `positive()` từ chối `0` → app chết lúc boot
+   * dù người dùng chỉ đang "để trống" đúng như tài liệu bảo. `preprocess` chặn trường hợp
+   * đó trước khi coerce chạy.
+   */
+  MONTHLY_INCOME: z.preprocess(
+    (v) => (v === '' || v === undefined ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
 
   /**
    * ─── SePay API (KÉO giao dịch về) ───

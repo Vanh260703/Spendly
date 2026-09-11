@@ -1,7 +1,7 @@
 'use client';
 
 import { forwardRef, useLayoutEffect, useRef, useState } from 'react';
-import { cn } from './index';
+import { cn } from './utils';
 
 /** Bỏ mọi ký tự không phải chữ số — người dùng có thể dán "4.500.000₫" hoặc "4,500,000" */
 const chiSo = (s: string) => s.replace(/\D/g, '');

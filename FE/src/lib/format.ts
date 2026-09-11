@@ -10,6 +10,18 @@ export function formatMoney(amount: number, opts: { sign?: boolean } = {}): stri
   return amount < 0 ? `−${s}` : `+${s}`;
 }
 
+/** Số tiền ẨN thành gì — giữ hình dạng "số tiền" (chấm + đơn vị) để không phá layout */
+export const SO_TIEN_AN = '•••••••₫';
+
+/** Bọc `formatMoney` để chỉ số nào cũng ẩn/hiện đồng bộ theo MỘT cờ, không tự viết `an ? '•••' : formatMoney(...)` rải rác mỗi màn hình */
+export function formatMoneyAnHien(
+  amount: number,
+  an: boolean,
+  opts: { sign?: boolean } = {},
+): string {
+  return an ? SO_TIEN_AN : formatMoney(amount, opts);
+}
+
 /**
  * Rút gọn cho biểu đồ và ô thống kê: 1.250.000 → "1,25tr".
  * Số đầy đủ quá dài sẽ làm vỡ layout trục biểu đồ trên màn hình hẹp.

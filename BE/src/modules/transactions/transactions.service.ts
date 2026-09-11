@@ -13,8 +13,6 @@ import {
 } from '../categories/entities/category.entity';
 import { BankAccount } from '../bank-accounts/entities/bank-account.entity';
 import {
-  AdjustBalanceDto,
-  CreateTransactionDto,
   ListTransactionQuery,
   UpdateTransactionDto,
   decodeCursor,

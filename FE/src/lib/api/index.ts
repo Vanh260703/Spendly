@@ -1,8 +1,8 @@
 import { api } from './client';
 import type {
-  BalanceStats, BankAccount, CalendarStats, CategoryStat, Category, Contact,
-  ContactDetail, Paginated, SharedExpense, SummaryStats, Transaction, TrendPoint,
-  UserProfile,
+  AiInsight, Anomalies, BalanceStats, BankAccount, Budget, BudgetHistoryEntry, CalendarStats,
+  CategoryStat, Category, Contact, ContactDetail, Debt, Goal, Paginated, PayoffPlan,
+  SharedExpense, SummaryStats, Transaction, TrendPoint, UserProfile,
 } from '@/types';
 
 const qs = (params: Record<string, unknown>) => {
@@ -76,12 +76,14 @@ export const statsApi = {
   balance: () => api.get<BalanceStats>('/stats/balance'),
   summary: (params: { period?: string; from?: string; to?: string } = {}) =>
     api.get<SummaryStats>(`/stats/summary${qs(params)}`),
-  byCategory: (params: { period?: string; type?: string } = {}) =>
+  byCategory: (params: { period?: string; from?: string; to?: string; type?: string } = {}) =>
     api.get<CategoryStat[]>(`/stats/by-category${qs(params)}`),
-  trend: (params: { period?: string; groupBy?: string } = {}) =>
+  trend: (params: { period?: string; from?: string; to?: string; groupBy?: string } = {}) =>
     api.get<TrendPoint[]>(`/stats/trend${qs(params)}`),
   calendar: (params: { month?: string } = {}) =>
     api.get<CalendarStats>(`/stats/calendar${qs(params)}`),
+  anomalies: (params: { from?: string; to?: string } = {}) =>
+    api.get<Anomalies>(`/stats/anomalies${qs(params)}`),
 };
 
 export const contactsApi = {
@@ -111,3 +113,54 @@ export const settlementsApi = {
 
 export const exportUrl = (params: { from?: string; to?: string } = {}) =>
   `/export/excel${qs(params)}`;
+
+// ————————————————————— Ngân sách —————————————————————
+
+export const budgetsApi = {
+  list: () => api.get<Budget[]>('/budgets'),
+  history: (params: { from?: string; to?: string; categoryId?: string; limit?: number } = {}) =>
+    api.get<BudgetHistoryEntry[]>(`/budgets/history${qs(params)}`),
+  create: (body: Record<string, unknown>) => api.post<Budget>('/budgets', body),
+  update: (id: string, body: Record<string, unknown>) =>
+    api.patch<Budget>(`/budgets/${id}`, body),
+  remove: (id: string) => api.delete<void>(`/budgets/${id}`),
+};
+
+// ————————————————————— Mục tiêu —————————————————————
+
+export const goalsApi = {
+  list: (params: { horizon?: string; status?: string } = {}) =>
+    api.get<Goal[]>(`/goals${qs(params)}`),
+  create: (body: Record<string, unknown>) => api.post<Goal>('/goals', body),
+  update: (id: string, body: Record<string, unknown>) => api.patch<Goal>(`/goals/${id}`, body),
+  remove: (id: string) => api.delete<void>(`/goals/${id}`),
+  contribute: (id: string, body: { amount: number; date?: string; note?: string }) =>
+    api.post<Goal>(`/goals/${id}/contribute`, body),
+};
+
+// ————————————————————— Khoản nợ —————————————————————
+
+export const debtsApi = {
+  list: (params: { includePaid?: boolean } = {}) => api.get<Debt[]>(`/debts${qs(params)}`),
+  payoffPlan: (params: { strategy?: string; extraPayment?: number } = {}) =>
+    api.get<PayoffPlan>(`/debts/payoff-plan${qs(params)}`),
+  create: (body: Record<string, unknown>) => api.post<Debt>('/debts', body),
+  update: (id: string, body: Record<string, unknown>) => api.patch<Debt>(`/debts/${id}`, body),
+  pay: (id: string, body: { amount: number; date?: string }) =>
+    api.post<Debt>(`/debts/${id}/payment`, body),
+};
+
+// ————————————————————— AI —————————————————————
+//
+// ⚠️ CHỈ dùng cho command/phân tích — không còn chat. `necessityReview`/`report`/
+// `healthScore` SINH bản mới (tốn quota nếu chưa cache), `insights` chỉ ĐỌC từ DB.
+
+export const aiApi = {
+  necessityReview: (params: { period?: string } = {}) =>
+    api.get<AiInsight & { cached: boolean }>(`/ai/necessity-review${qs(params)}`),
+  report: (params: { period?: string } = {}) =>
+    api.get<AiInsight & { cached: boolean }>(`/ai/report${qs(params)}`),
+  healthScore: () => api.get<AiInsight & { cached: boolean }>('/ai/health-score'),
+  insights: (params: { kind?: string; kinds?: string; limit?: number } = {}) =>
+    api.get<AiInsight[]>(`/ai/insights${qs(params)}`),
+};

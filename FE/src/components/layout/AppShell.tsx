@@ -1,30 +1,38 @@
 'use client';
 
-import { Moon, Receipt, Sun, Users, Wallet } from 'lucide-react';
+import {
+  Bot, ChartPie, LayoutDashboard, LayoutGrid, ListTree, Moon, PiggyBank, Receipt, Sun, Target,
+  Users, Wallet,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui';
+import { Button, Modal } from '@/components/ui';
 import { useProfile } from '@/hooks/useSettings';
 
 /**
- * Tách 2 nhóm: việc làm HẰNG NGÀY và việc thỉnh thoảng mới đụng.
+ * Hai nhóm: việc làm HẰNG NGÀY (tổng quan, dòng tiền, công nợ, trợ lý AI) và việc thỉnh
+ * thoảng mới đụng (ngân sách, mục tiêu, nợ, báo cáo, danh mục).
  *
- * Tab bar mobile chỉ chứa được ~5 mục trước khi chữ bị cắt và vùng bấm quá hẹp,
- * nên nhóm phụ nằm sau nút "Thêm".
+ * Tab bar mobile chỉ chứa được ~5 mục trước khi chữ bị cắt và vùng bấm quá hẹp, nên nhóm
+ * phụ nằm sau nút "Thêm". Desktop rộng hơn thì sidebar hiện cả hai nhóm luôn, không cần ẩn.
  */
-/**
- * Ba mục, hết.
- *
- * App làm hai việc — dòng tiền và công nợ — nên có đúng hai màn hình chính. `Danh mục` là
- * hạ tầng cho việc gán nhãn giao dịch, không phải một tính năng thứ ba.
- *
- * gộp lại thì bớt được một lớp menu người dùng phải mở ra mới thấy.
- */
-const NAV = [
-  { href: '/transactions', label: 'Dòng tiền', icon: Receipt },
+const NAV_CHINH = [
+  { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
+  { href: '/transactions', label: 'Giao dịch', icon: Receipt },
   { href: '/contacts', label: 'Công nợ', icon: Users },
+  { href: '/ai', label: 'Trợ lý AI', icon: Bot },
 ] as const;
+
+const NAV_PHU = [
+  { href: '/budgets', label: 'Ngân sách', icon: ChartPie },
+  { href: '/goals', label: 'Mục tiêu', icon: Target },
+  { href: '/debts', label: 'Khoản nợ', icon: PiggyBank },
+  { href: '/reports', label: 'Báo cáo', icon: ListTree },
+  { href: '/categories', label: 'Danh mục', icon: LayoutGrid },
+] as const;
+
+type MucNav = (typeof NAV_CHINH)[number] | (typeof NAV_PHU)[number];
 
 function ThemeToggle() {
   const [dark, setDark] = useState(false);
@@ -45,22 +53,21 @@ function ThemeToggle() {
   );
 }
 
-function MucNav({
+function MucNavItem({
   href,
   label,
-  Icon,
+  icon: Icon,
   pathname,
-}: {
-  href: (typeof NAV)[number]['href'];
-  label: string;
-  Icon: React.ComponentType<{ size?: number }>;
-  pathname: string;
-}) {
+  onClick,
+}: MucNav & { pathname: string; onClick?: () => void }) {
   return (
     <Link
       href={href}
-      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
-        pathname.startsWith(href) ? 'bg-brand text-white' : 'hover:bg-[var(--surface-2)]'
+      onClick={onClick}
+      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
+        pathname.startsWith(href)
+          ? 'bg-brand text-white elevation-brand'
+          : 'hover:bg-[var(--surface-2)]'
       }`}
     >
       <Icon size={18} />
@@ -76,24 +83,33 @@ function MucNav({
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: profile } = useProfile();
+  const [moThem, setMoThem] = useState(false);
+
+  // Tab "Thêm" phải sáng lên khi đang ở một trong các trang thuộc nhóm phụ, không thì
+  // người dùng vào /budgets rồi nhìn xuống tab bar thấy không có mục nào được chọn
+  const dangONhomPhu = NAV_PHU.some((n) => pathname.startsWith(n.href));
 
   return (
     <div className="min-h-dvh md:flex">
       {/* Sidebar — desktop */}
       <aside className="surface sticky top-0 hidden h-dvh w-60 shrink-0 flex-col p-4 md:flex">
-        <Link href="/transactions" className="mb-6 flex items-center gap-2 px-2">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-brand text-white">
+        <Link href="/dashboard" className="mb-6 flex items-center gap-2 px-2">
+          <span className="elevation-brand flex size-9 items-center justify-center rounded-xl bg-brand text-white">
             <Wallet size={18} />
           </span>
-          <span className="text-lg font-bold">Spendly</span>
+          <span className="text-lg font-bold tracking-tight">Spendly</span>
         </Link>
 
         <nav className="flex-1 space-y-1">
-          {NAV.map(({ href, label, icon: Icon }) => (
-            <MucNav key={href} href={href} label={label} Icon={Icon} pathname={pathname} />
+          {NAV_CHINH.map((n) => (
+            <MucNavItem key={n.href} {...n} pathname={pathname} />
           ))}
 
           <div className="my-2 border-t" />
+
+          {NAV_PHU.map((n) => (
+            <MucNavItem key={n.href} {...n} pathname={pathname} />
+          ))}
         </nav>
 
         <div className="flex items-center justify-between border-t pt-3">
@@ -111,11 +127,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Header — mobile */}
       <header className="surface sticky top-0 z-30 flex items-center justify-between px-4 py-3 md:hidden">
-        <Link href="/transactions" className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-brand text-white">
+        <Link href="/dashboard" className="flex items-center gap-2">
+          <span className="elevation-brand flex size-8 items-center justify-center rounded-lg bg-brand text-white">
             <Wallet size={16} />
           </span>
-          <span className="font-bold">Spendly</span>
+          <span className="font-bold tracking-tight">Spendly</span>
         </Link>
         <ThemeToggle />
       </header>
@@ -125,7 +141,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Tab bar — mobile */}
       <nav className="surface fixed inset-x-0 bottom-0 z-30 flex justify-around border-t py-1.5 md:hidden">
-        {NAV.map(({ href, label, icon: Icon }) => (
+        {NAV_CHINH.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
@@ -138,7 +154,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
         ))}
 
+        <button
+          onClick={() => setMoThem(true)}
+          className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] ${
+            dangONhomPhu ? 'text-brand' : 'muted'
+          }`}
+        >
+          <LayoutGrid size={20} />
+          Thêm
+        </button>
       </nav>
+
+      {/* Sheet "Thêm" — mobile, gom nhóm phụ để tab bar không quá 5 mục */}
+      <Modal open={moThem} onClose={() => setMoThem(false)} title="Thêm">
+        <div className="space-y-1">
+          {NAV_PHU.map((n) => (
+            <MucNavItem key={n.href} {...n} pathname={pathname} onClick={() => setMoThem(false)} />
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 }

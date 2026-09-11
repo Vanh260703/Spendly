@@ -1,30 +1,65 @@
 @import 'tailwindcss';
 
 /*
- * Design tokens — Tailwind v4 khai báo theme bằng @theme trong CSS, không còn
- * tailwind.config.js. Mỗi biến ở đây tự sinh ra utility tương ứng:
- * `--color-brand` → `bg-brand` / `text-brand` / `border-brand`.
+ * ═══════════════════════════ Design tokens ═══════════════════════════
+ * Tailwind v4 khai báo theme bằng @theme trong CSS, không còn tailwind.config.js.
+ * Mỗi biến ở đây tự sinh ra utility tương ứng: `--color-brand` → `bg-brand` /
+ * `text-brand` / `border-brand`.
+ *
+ * Hệ thống này được dựng lại từ đầu (không phải vá dần bản cũ) với một mục tiêu cụ thể:
+ * THÊM MỘT MÀN HÌNH MỚI SAU NÀY không nên phải tự chế màu/khoảng cách/bo góc — mọi giá trị
+ * cần dùng đã có sẵn tên và nghĩa ở đây.
  */
 @theme {
-  /* Xanh lá = tiền vào, là màu chủ đạo của app tài chính */
+  /* ───── Brand — xanh lá, bản sắc sản phẩm ───── */
   --color-brand-50: #ecfdf5;
   --color-brand-100: #d1fae5;
   --color-brand-200: #a7f3d0;
+  --color-brand-300: #6ee7b7;
   --color-brand-400: #34d399;
   --color-brand: #10b981;
   --color-brand-600: #059669;
   --color-brand-700: #047857;
+  --color-brand-800: #065f46;
+  --color-brand-900: #064e3b;
 
-  /* Thu / chi — dùng nhất quán toàn app, đừng dùng green-500/red-500 rời rạc */
+  /* ───── Thu / chi — dùng NHẤT QUÁN toàn app, đừng dùng green-500/red-500 rời rạc ───── */
   --color-income: #10b981;
+  --color-income-soft: #d1fae5;
   --color-expense: #f43f5e;
+  --color-expense-soft: #ffe4e6;
 
-  /* Trạng thái ngân sách: ok → warning → exceeded */
+  /* ───── Trạng thái: ok → warning → exceeded ───── */
   --color-ok: #10b981;
   --color-warning: #f59e0b;
+  --color-warning-soft: #fef3c7;
   --color-exceeded: #f43f5e;
 
+  /*
+   * ───── Thang trung tính — 11 bậc, dùng cho MỌI sắc xám trong app ─────
+   * Trước đây chỉ có 5 giá trị hex rời rạc (bg/surface/surface-2/border/text/muted) khai
+   * riêng cho từng theme — hết chỗ ngay khi cần thêm một sắc thái mới (VD: hover state cho
+   * một hàng, hay nền cho badge trung tính). Thang đủ 11 bậc thì bất kỳ nhu cầu nào trong
+   * tương lai cũng chọn được từ đây, không phải bịa một hex mới rồi hai theme lại lệch nhau.
+   */
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-200: #e2e8f0;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-400: #94a3b8;
+  --color-neutral-500: #64748b;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1e293b;
+  --color-neutral-900: #0f172a;
+  --color-neutral-950: #020617;
+
   --font-sans: 'Be Vietnam Pro', ui-sans-serif, system-ui, sans-serif;
+
+  /* Bo góc — 3 bậc đặt tên theo VAI TRÒ chứ không theo giá trị, để đổi số đo không phải sửa nghĩa */
+  --radius-control: 0.75rem; /* input/button/badge nhỏ */
+  --radius-surface: 1rem; /* card thường */
+  --radius-sheet: 1.25rem; /* modal/hero — bề mặt lớn nhất màn hình */
 }
 
 /*
@@ -32,21 +67,42 @@
  * Mặc định là sáng; khối dưới ghi đè khi thẻ <html> có class `dark`.
  */
 :root {
-  --bg: #f8fafc;
+  --bg: var(--color-neutral-50);
   --surface: #ffffff;
-  --surface-2: #f1f5f9;
-  --border: #e2e8f0;
-  --text: #0f172a;
-  --text-muted: #64748b;
+  --surface-2: var(--color-neutral-100);
+  --surface-hover: var(--color-neutral-100);
+  --border: var(--color-neutral-200);
+  --border-strong: var(--color-neutral-300);
+  --text: var(--color-neutral-900);
+  --text-muted: var(--color-neutral-500);
+
+  --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.05), 0 1px 1px 0 rgb(15 23 42 / 0.03);
+  --shadow-md: 0 6px 16px -4px rgb(15 23 42 / 0.1), 0 2px 6px -2px rgb(15 23 42 / 0.05);
+  --shadow-lg: 0 20px 40px -12px rgb(15 23 42 / 0.18), 0 8px 16px -8px rgb(15 23 42 / 0.08);
+  --shadow-brand: 0 12px 28px -8px rgb(16 185 129 / 0.35), 0 4px 10px -4px rgb(16 185 129 / 0.2);
 }
 
 .dark {
-  --bg: #0b1120;
-  --surface: #111827;
-  --surface-2: #1f2937;
-  --border: #1f2937;
-  --text: #f1f5f9;
-  --text-muted: #94a3b8;
+  --bg: #05070d;
+  /*
+   * ⚠️ Bản trước: surface #111827 trên nền #0b1120 — hai giá trị quá gần nhau (chênh độ
+   * sáng chưa tới 2%), card nhòe hẳn vào nền, ranh giới chỉ còn dựa vào viền 1px mảnh.
+   * Khoảng cách ở đây đủ rộng để BẢN THÂN MÀU NỀN đã phân tầng được — viền chỉ là điểm
+   * nhấn phụ, không phải chỗ dựa duy nhất để mắt nhận ra "đây là một card".
+   */
+  --surface: #131725;
+  --surface-2: #1c2136;
+  --surface-hover: #212745;
+  --border: #262c47;
+  --border-strong: #363d5e;
+  --text: var(--color-neutral-100);
+  --text-muted: #8992ae;
+
+  /* Nền tối thì bóng đen gần như vô hình — dựa vào viền sáng nhẹ (rìa trắng mờ) thay vì độ đậm bóng */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.25);
+  --shadow-md: 0 8px 20px -4px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.035);
+  --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.05);
+  --shadow-brand: 0 16px 36px -8px rgb(16 185 129 / 0.32), 0 0 0 1px rgb(16 185 129 / 0.18);
 }
 
 @layer base {
@@ -74,5 +130,21 @@
 
   .muted {
     color: var(--text-muted);
+  }
+
+  /* Thang elevation DÙNG CHUNG toàn app — đừng viết box-shadow tay ở nơi khác */
+  .elevation-sm { box-shadow: var(--shadow-sm); }
+  .elevation-md { box-shadow: var(--shadow-md); }
+  .elevation-lg { box-shadow: var(--shadow-lg); }
+  .elevation-brand { box-shadow: var(--shadow-brand); }
+
+  /*
+   * Nền lưới rất mờ cho các mặt lớn (hero, trang đăng nhập...) — điểm chấm nhỏ tạo texture
+   * mà không cạnh tranh với nội dung. Dùng `background-image` nên không ảnh hưởng gì tới
+   * `background-color` đã đặt riêng ở chỗ gọi.
+   */
+  .bg-dot-grid {
+    background-image: radial-gradient(currentColor 1px, transparent 1px);
+    background-size: 20px 20px;
   }
 }

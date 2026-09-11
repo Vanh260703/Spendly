@@ -6,7 +6,7 @@ import { ContactDetail } from '@/components/friends/ContactDetail';
 import { OweForm } from '@/components/friends/OweForm';
 import { SplitBillForm } from '@/components/friends/SplitBillForm';
 import {
-  Button, Card, EmptyState, ErrorState, Input, Modal, Skeleton, cn,
+  Avatar, Button, Card, EmptyState, ErrorState, Input, Modal, Skeleton, Stat,
 } from '@/components/ui';
 import { useContacts, useDeleteContact } from '@/hooks/useFriends';
 import type { ApiError } from '@/lib/api/client';
@@ -36,7 +36,7 @@ export default function ContactsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Danh bạ</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Danh bạ</h1>
         {/*
           Hai nút cho hai chiều nợ, đặt cạnh nhau và nói rõ ai ứng tiền. Trước chỉ có "Chia
           bill" — chiều "tôi nợ" phải đi vòng qua form đó và khai cả hóa đơn.
@@ -55,12 +55,10 @@ export default function ContactsPage() {
       {(tongHoNo > 0 || tongToiNo > 0) && (
         <div className="grid grid-cols-2 gap-3">
           <Card className="text-center">
-            <p className="muted text-xs">Bạn bè nợ bạn</p>
-            <p className="tabular text-xl font-semibold text-income">{formatMoney(tongHoNo)}</p>
+            <Stat label="Bạn bè nợ bạn" value={formatMoney(tongHoNo)} tone="income" size="sm" />
           </Card>
           <Card className="text-center">
-            <p className="muted text-xs">Bạn đang nợ</p>
-            <p className="tabular text-xl font-semibold text-expense">{formatMoney(tongToiNo)}</p>
+            <Stat label="Bạn đang nợ" value={formatMoney(tongToiNo)} tone="expense" size="sm" />
           </Card>
         </div>
       )}
@@ -101,28 +99,27 @@ export default function ContactsPage() {
               <div key={nhom.ten} className="space-y-2">
                 <p className="muted text-xs font-medium">{nhom.ten}</p>
                 {nhom.ds.map((c) => (
-                  <Card key={c.id} className="!p-0">
+                  <Card key={c.id} padding="none" tone="interactive">
                     <div className="flex items-center gap-3 p-3">
                       <button
                         type="button"
                         onClick={() => setDangXem(c)}
                         className="flex min-w-0 flex-1 items-center gap-3 text-left"
                       >
-                        <span
-                          className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-semibold text-white"
-                          style={{ background: c.color }}
-                        >
-                          {c.name.trim().charAt(0).toUpperCase()}
-                        </span>
+                        <Avatar name={c.name} color={c.color} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium">{c.name}</span>
                           {c.phone && <span className="muted block text-xs">{c.phone}</span>}
                         </span>
                         <span
-                          className={cn(
-                            'tabular shrink-0 text-sm font-medium',
-                            c.balance > 0 ? 'text-income' : c.balance < 0 ? 'text-expense' : 'muted',
-                          )}
+                          className={
+                            'tabular shrink-0 text-sm font-medium ' +
+                            (c.balance > 0
+                              ? 'text-income'
+                              : c.balance < 0
+                                ? 'text-expense'
+                                : 'muted')
+                          }
                         >
                           {c.balance === 0 ? '—' : formatMoney(Math.abs(c.balance))}
                         </span>
@@ -155,9 +152,7 @@ export default function ContactsPage() {
       </Modal>
 
       <Modal open={!!dangXem} onClose={() => setDangXem(null)} title={dangXem?.name ?? ''}>
-        {dangXem && (
-          <ContactDetail contactId={dangXem.id} onClose={() => setDangXem(null)} />
-        )}
+        {dangXem && <ContactDetail contactId={dangXem.id} onClose={() => setDangXem(null)} />}
       </Modal>
     </div>
   );

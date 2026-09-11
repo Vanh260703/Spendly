@@ -5,7 +5,7 @@
 #   docker compose down              dừng (GIỮ dữ liệu)
 #   docker compose down -v           dừng và XÓA SẠCH dữ liệu
 #
-# Web:  http://localhost:3000     API: http://localhost:3001/api/v1
+# Web:  http://localhost:8080     API: http://localhost:3030/api/v1
 #
 # ⚠️ Cổng Postgres cố ý KHÔNG mở ra máy thật (5432 đang bị bản Homebrew chiếm).
 # Cần truy cập từ ngoài thì bỏ comment phần `ports` — nhớ đổi sang cổng khác.
@@ -31,7 +31,6 @@ services:
       timeout: 3s
       retries: 20
 
-
   be:
     build:
       context: ./BE
@@ -47,11 +46,12 @@ services:
       DB_PASSWORD: spendly
       DB_NAME: spendly
       PORT: 3001
-      CORS_ORIGIN: http://localhost:3000
-      # BANK_ACCOUNT_NUMBER / BANK_NAME / TIMEZONE / MONTH_START_DAY nạp từ BE/.env qua
-      # `env_file`. Thiếu thì Zod ở `config/env.ts` chặn ngay lúc khởi động kèm thông báo rõ.
+      CORS_ORIGIN: http://localhost:8080,http://localhost:3002
+      # BANK_ACCOUNT_NUMBER / BANK_NAME / TIMEZONE / MONTH_START_DAY / LLM_API_KEY nạp từ
+      # BE/.env qua `env_file`. Thiếu biến bắt buộc thì Zod ở `config/env.ts` chặn ngay lúc
+      # khởi động kèm thông báo rõ.
     ports:
-      - '3001:3001'
+      - '3030:3001'
     depends_on:
       postgres: { condition: service_healthy }
     restart: unless-stopped
@@ -60,11 +60,11 @@ services:
     build:
       context: ./FE
       args:
-        # Build-time: trình duyệt của bạn gọi API từ NGOÀI mạng compose nên phải là
-        # localhost:3001, không phải http://be:3001.
-        NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+        # Build-time: trình duyệt của bạn gọi API từ NGOÀI mạng compose nên phải khớp CỔNG MÁY THẬT
+        # của BE (`3030` — vế trái trong `ports:` của service `be`), không phải cổng nội bộ hay `http://be:3001`.
+        NEXT_PUBLIC_API_URL: http://localhost:3030/api/v1
     ports:
-      - '3000:80'
+      - '8080:80'
     depends_on:
       - be
     restart: unless-stopped

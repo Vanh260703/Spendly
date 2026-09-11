@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  Baby, Beer, BookOpen, Briefcase, Bus, Cake, Car, CircleEllipsis, Coffee,
+  Baby, Beer, BookOpen, Briefcase, Bus, Cake, Car, CircleEllipsis, CircleHelp, Coffee,
   CreditCard, CupSoda, Dog, Droplet, Dumbbell, Film, Fuel, Gamepad2, Gift,
   GraduationCap, Heart, HeartPulse, House, Landmark, Laptop, Music, PiggyBank,
   Pill, Plane, Receipt, Scale, Scissors, Shirt, ShoppingBag, Smartphone, Target,
@@ -69,6 +69,12 @@ export const CATEGORY_ICONS = {
   // Hệ thống
   scale: Scale,
   'circle-ellipsis': CircleEllipsis,
+  /*
+   * Icon của danh mục "Chưa phân loại" — vắng mặt trong bảng này thì mọi giao dịch chưa
+   * gán nhãn (đa số áp đảo lúc mới đồng bộ, xem SePay) đều rơi về `circle-ellipsis` chung
+   * chung. `circle-help` khớp đúng nghĩa "chưa biết đây là khoản gì" hơn.
+   */
+  'circle-help': CircleHelp,
 } as const;
 
 export type CategoryIconName = keyof typeof CATEGORY_ICONS;

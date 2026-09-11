@@ -15,6 +15,10 @@ import { StatsModule } from './modules/stats/stats.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { UsersModule } from './modules/users/users.module';
 import { BankAccountsModule } from './modules/bank-accounts/bank-accounts.module';
+import { AiModule } from './modules/ai/ai.module';
+import { BudgetsModule } from './modules/budgets/budgets.module';
+import { DebtsModule } from './modules/debts/debts.module';
+import { GoalsModule } from './modules/goals/goals.module';
 import { SingleUserGuard } from './common/guards/single-user.guard';
 
 @Module({
@@ -37,6 +41,10 @@ import { SingleUserGuard } from './common/guards/single-user.guard';
     FriendsModule,
     SepayModule,
     ExportModule,
+    BudgetsModule,
+    GoalsModule,
+    DebtsModule,
+    AiModule,
   ],
   providers: [
     // Thay cho JwtAuthGuard: không chặn ai, chỉ gắn user duy nhất vào request

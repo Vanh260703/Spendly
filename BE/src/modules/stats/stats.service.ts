@@ -11,6 +11,7 @@ import {
 } from '../../common/utils/period';
 import { SYSTEM_CATEGORY } from '../categories/default-categories';
 import { FriendsService } from '../friends/friends.service';
+import { Goal, GoalStatus } from '../goals/entities/goal.entity';
 import { Transaction, TxType } from '../transactions/entities/transaction.entity';
 import { TransactionsService } from '../transactions/transactions.service';
 import { User } from '../users/entities/user.entity';
@@ -23,6 +24,8 @@ export class StatsService {
     private readonly txRepo: Repository<Transaction>,
     @InjectRepository(User)
     private readonly users: Repository<User>,
+    @InjectRepository(Goal)
+    private readonly goals: Repository<Goal>,
     private readonly transactions: TransactionsService,
     private readonly friends: FriendsService,
   ) {}
@@ -30,29 +33,41 @@ export class StatsService {
   // ————————————————————— Số dư —————————————————————
 
   /**
-   * Ba con số của màn hình chính.
+   * Các con số của màn hình chính.
    *
    * | | Tiền có trong tài khoản? |
    * |---|---|
    * | `currentBalance` | có — số dư ngân hàng báo về |
+   * | `committedToGoals` | có, nhưng đã gắn nhãn mục tiêu |
    * | `owedByMe` | có, nhưng đã có chủ: bạn đang nợ người ta |
    * | `owedToMe` | **KHÔNG** — người khác đang giữ, sẽ về |
-   * | `freeToSpend` | `currentBalance − owedByMe` |
+   * | `freeToSpend` | `currentBalance − committedToGoals − owedByMe` |
    *
    * ⚠️ `owedToMe` KHÔNG cộng vào `freeToSpend`: tiền đó chưa về tài khoản, tiêu trước là
    * tiêu khống.
    */
   async getBalance(userId: string) {
-    const [balance, congNo] = await Promise.all([
+    const [balance, row, congNo] = await Promise.all([
       this.transactions.getBalance(userId),
+      this.goals
+        .createQueryBuilder('g')
+        .select('COALESCE(SUM(g.currentAmount), 0)', 'total')
+        .where('g.userId = :userId AND g.status = :status', {
+          userId,
+          status: GoalStatus.ACTIVE,
+        })
+        .getRawOne<{ total: string }>(),
       this.friends.tongCongNo(userId),
     ]);
 
+    const committedToGoals = Number(row?.total ?? 0);
+
     return {
       ...balance,
+      committedToGoals,
       owedToMe: congNo.owedToMe,
       owedByMe: congNo.owedByMe,
-      freeToSpend: balance.currentBalance - congNo.owedByMe,
+      freeToSpend: balance.currentBalance - committedToGoals - congNo.owedByMe,
     };
   }
 
@@ -61,15 +76,30 @@ export class StatsService {
   async getSummary(userId: string, query: RangeQuery) {
     const { range, kind } = await this.giaiMaKhoang(userId, query);
 
-    const [hienTai, kyTruoc, ba, choMuon, traLai] = await Promise.all([
+    const kyTruocRange = shiftRange(range, 1, kind);
+
+    const [hienTai, kyTruoc, ba, choMuon, traLai, somNhat] = await Promise.all([
       this.tongTheoLoai(userId, range),
-      this.tongTheoLoai(userId, shiftRange(range, 1, kind)),
+      this.tongTheoLoai(userId, kyTruocRange),
       Promise.all(
         [1, 2, 3].map((n) => this.tongTheoLoai(userId, shiftRange(range, n, kind))),
       ),
       this.friends.tongChoMuonTrongKy(userId, range.start, range.end),
       this.friends.tongTraLaiTrongKy(userId, range.start, range.end),
+      this.ngayGiaoDichSomNhat(userId),
     ]);
+
+    /*
+     * ⚠️ Kỳ trước có bị CẮT CỤT không?
+     *
+     * SePay chỉ ghi giao dịch kể từ lúc liên kết tài khoản, không lấy ngược lịch sử. Nên
+     * kỳ trước có thể chỉ chứa vài ngày cuối trong khi kỳ này đã chạy trọn — so hai cái
+     * đó rồi kết luận "chi nhiều hơn 550%" là **bịa**: phần lớn chênh lệch đến từ việc
+     * kỳ trước thiếu dữ liệu, không phải từ hành vi tiêu tiền.
+     *
+     * Đây đúng loại con số sai mà trông vẫn hợp lý, nên thà không so còn hơn so sai.
+     */
+    const kyTruocThieuDuLieu = !!somNhat && somNhat > kyTruocRange.start;
 
     /*
      * ⚠️ Trừ phần CHO MƯỢN ra khỏi tổng chi.
@@ -93,6 +123,8 @@ export class StatsService {
      */
     const tongThu = Math.max(0, hienTai.income - traLai);
     const tbBaKy = ba.reduce((s, k) => s + k.expense, 0) / 3;
+    const byKind = await this.tongTheoKind(userId, range);
+    const tyLe = (v: number) => (tongChi > 0 ? Number((v / tongChi).toFixed(4)) : 0);
 
     return {
       from: range.start,
@@ -108,13 +140,26 @@ export class StatsService {
       /** Phần đã ứng cho người khác trong kỳ, sẽ được trả lại */
       lentInPeriod: choMuon,
       net: tongThu - tongChi,
+      /** Chi tiêu theo need/want/saving — nền cho khung 50/30/20 và gợi ý cắt giảm của AI */
+      byKind,
+      kindRatio: {
+        need: tyLe(byKind.need),
+        want: tyLe(byKind.want),
+        saving: tyLe(byKind.saving),
+      },
       comparison: {
         previousPeriodExpense: kyTruoc.expense,
         changePercent:
-          kyTruoc.expense > 0
+          kyTruoc.expense > 0 && !kyTruocThieuDuLieu
             ? Number(((tongChi - kyTruoc.expense) / kyTruoc.expense).toFixed(4))
             : null,
         avg3PeriodsExpense: Math.round(tbBaKy),
+        /**
+         * `true` = kỳ trước không được dữ liệu phủ hết, nên `changePercent` bị bỏ trống.
+         * Trả cờ này ra thay vì im lặng để giao diện nói được LÝ DO không có so sánh —
+         * ẩn đi không giải thích thì người dùng tưởng tính năng hỏng.
+         */
+        previousPeriodPartial: kyTruocThieuDuLieu,
       },
     };
   }
@@ -135,6 +180,7 @@ export class StatsService {
       .addSelect('c.name', 'name')
       .addSelect('c.icon', 'icon')
       .addSelect('c.color', 'color')
+      .addSelect('c.kind', 'kind')
       .addSelect('SUM(t.amount)', 'total')
       .addSelect('COUNT(*)', 'count')
       .addSelect('AVG(t.amount)', 'average')
@@ -143,6 +189,7 @@ export class StatsService {
       .addGroupBy('c.name')
       .addGroupBy('c.icon')
       .addGroupBy('c.color')
+      .addGroupBy('c.kind')
       .orderBy('SUM(t.amount)', 'DESC')
       .getRawMany<Record<string, string>>();
 
@@ -163,6 +210,7 @@ export class StatsService {
           name: r.name,
           icon: r.icon,
           color: r.color,
+          kind: r.kind,
         },
         total,
         count: Number(r.count),
@@ -285,6 +333,103 @@ export class StatsService {
       : new Date(new TZDate(y, m - 1, d, 23, 59, 59, 999, tz).getTime());
   }
 
+  // ————————————————————— Chi tiêu bất thường —————————————————————
+
+  /**
+   * Gấp bao nhiêu lần mức chi thường ngày thì đáng báo.
+   *
+   * Chọn 10 sau khi soi phân bố thật: dữ liệu hiện tại có trung vị 40.500₫, và ngưỡng 10
+   * lần lọc ra 2/56 khoản (3,6%). Hạ xuống 8 lần là nhảy lên 7 khoản (12,5%) — cảnh báo
+   * nổ 1/8 số giao dịch thì không ai đọc nữa, và một cảnh báo bị phớt lờ còn tệ hơn không
+   * có cảnh báo.
+   */
+  private static readonly NGUONG_GAP_LAN = 10;
+
+  /**
+   * Sàn tuyệt đối. Người tiêu lặt vặt có trung vị 5.000₫ thì 10 lần cũng chỉ là 50.000₫ —
+   * đúng về mặt thống kê nhưng không đáng làm phiền ai.
+   */
+  private static readonly SAN_TUYET_DOI = 200_000;
+
+  /** Dưới ngần này giao dịch thì trung vị chưa nói lên điều gì, đừng kết luận bừa */
+  private static readonly TOI_THIEU_MAU = 10;
+
+  /**
+   * Những khoản chi lớn bất thường so với chính thói quen của người dùng.
+   *
+   * Dùng TRUNG VỊ làm mốc, không dùng trung bình: trung bình bị chính khoản bất thường kéo
+   * lên, nên càng có outlier lớn thì ngưỡng càng cao và outlier càng dễ lọt. Trung vị đứng
+   * yên, đó là lý do nó là mốc đúng cho việc này.
+   *
+   * Mốc tính TRONG KHOẢNG đang xem, không phải toàn bộ lịch sử — để con số cảnh báo khớp
+   * với những gì người dùng đang nhìn thấy trên màn hình.
+   *
+   * ⚠️ CỐ Ý không bỏ "Chưa phân loại": phần lớn giao dịch nằm ở đó, mà một khoản chi lớn
+   * chưa gán nhãn thì càng đáng xem. Ngược lại "Trả hộ bạn bè" bị `baseQuery` loại sẵn —
+   * tiền cho mượn không phải tiền tiêu, báo động vì nó là báo sai.
+   */
+  async getAnomalies(userId: string, query: RangeQuery) {
+    const { range } = await this.giaiMaKhoang(userId, query);
+
+    /*
+     * ⚠️ `percentile_cont` trả về double precision, và raw query thì `transformer: money`
+     * KHÔNG chạy — phải Number() thủ công, giống mọi chỗ dùng SUM() trong file này.
+     */
+    const moc = await this.baseQuery(userId, range)
+      .select('percentile_cont(0.5) WITHIN GROUP (ORDER BY t.amount)', 'trungVi')
+      .addSelect('COUNT(*)', 'soMau')
+      .andWhere('t.type = :type', { type: TxType.EXPENSE })
+      .getRawOne<{ trungVi: string | null; soMau: string }>();
+
+    const trungVi = Number(moc?.trungVi ?? 0);
+    const soMau = Number(moc?.soMau ?? 0);
+
+    if (soMau < StatsService.TOI_THIEU_MAU || trungVi <= 0) {
+      return { items: [], median: trungVi, sampleSize: soMau, threshold: 0 };
+    }
+
+    const nguong = Math.max(
+      trungVi * StatsService.NGUONG_GAP_LAN,
+      StatsService.SAN_TUYET_DOI,
+    );
+
+    const rows = await this.baseQuery(userId, range)
+      .select(['t.id', 't.amount', 't.date', 't.note'])
+      .addSelect(['c.name', 'c.icon', 'c.color'])
+      .andWhere('t.type = :type', { type: TxType.EXPENSE })
+      .andWhere('t.amount >= :nguong', { nguong })
+      .orderBy('t.amount', 'DESC')
+      .limit(10)
+      .getMany();
+
+    return {
+      median: trungVi,
+      sampleSize: soMau,
+      threshold: nguong,
+      items: rows.map((t) => ({
+        id: t.id,
+        amount: t.amount,
+        date: t.date,
+        note: t.note,
+        category: t.category
+          ? { name: t.category.name, icon: t.category.icon, color: t.category.color }
+          : null,
+        /** Gấp mấy lần mức chi thường ngày — con số để giải thích VÌ SAO bị nêu ra */
+        timesMedian: Number((t.amount / trungVi).toFixed(1)),
+      })),
+    };
+  }
+
+  /** Ngày của giao dịch cũ nhất — dùng để biết một kỳ có được dữ liệu phủ hết hay không */
+  private async ngayGiaoDichSomNhat(userId: string): Promise<Date | null> {
+    const r = await this.txRepo
+      .createQueryBuilder('t')
+      .select('MIN(t.date)', 'som')
+      .where('t.userId = :userId', { userId })
+      .getRawOne<{ som: Date | null }>();
+    return r?.som ?? null;
+  }
+
   private baseQuery(userId: string, range: DateRange, boQuaChuaPhanLoai = false) {
     const qb = this.txRepo
       .createQueryBuilder('t')
@@ -318,6 +463,25 @@ export class StatsService {
 
     const lay = (type: TxType) => Number(rows.find((r) => r.type === type)?.total ?? 0);
     return { income: lay(TxType.INCOME), expense: lay(TxType.EXPENSE) };
+  }
+
+  /**
+   * Chi tiêu gom theo `CategoryKind` (need/want/saving) — đầu vào cho `kindRatio` và
+   * cho AI biết vùng nào được phép đề xuất cắt (AI chỉ đụng `want`).
+   *
+   * Loại "Chưa phân loại" (`boQuaChuaPhanLoai = true`): `kind` của nó không mang ý nghĩa
+   * thật (xem `default-categories.ts`), gộp vào sẽ làm lệch tỉ trọng need/want/saving.
+   */
+  private async tongTheoKind(userId: string, range: DateRange) {
+    const rows = await this.baseQuery(userId, range, true)
+      .select('c.kind', 'kind')
+      .addSelect('SUM(t.amount)', 'total')
+      .andWhere('t.type = :type', { type: TxType.EXPENSE })
+      .groupBy('c.kind')
+      .getRawMany<{ kind: string; total: string }>();
+
+    const lay = (k: string) => Number(rows.find((r) => r.kind === k)?.total ?? 0);
+    return { need: lay('need'), want: lay('want'), saving: lay('saving') };
   }
 
 
